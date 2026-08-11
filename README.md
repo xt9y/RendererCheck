@@ -4,13 +4,34 @@ Test Vulkan and native graphics projects from the terminal before visual regress
 
 RendererCheck is a small, engine-agnostic test runner for renderer correctness, Vulkan diagnostics, deterministic frame baselines, image diffs, and eventually GPU performance regressions.
 
-## Build
+## Install
+
+```bash
+git clone https://github.com/xt9y/RendererCheck.git
+cd RendererCheck
+make
+sudo make install
+```
+
+This installs:
+
+- `rendercheck` to `/usr/local/bin`
+- `rendercheck/capture.h` to `/usr/local/include`
+
+A custom prefix is supported:
 
 ```bash
 make
+sudo make install PREFIX=/opt/rendercheck
 ```
 
-The binary is written to `build/rendercheck`.
+Uninstall with:
+
+```bash
+sudo make uninstall
+```
+
+The build binary remains available at `build/rendercheck`.
 
 ## Requirements
 
