@@ -2,7 +2,7 @@
 
 Test Vulkan and native graphics projects from the terminal before visual regressions reach a release.
 
-RendererCheck is a small, engine-agnostic test runner for renderer correctness, Vulkan validation, image baselines, performance regressions, and GPU compatibility.
+RendererCheck is a small, engine-agnostic test runner for renderer correctness, Vulkan diagnostics, deterministic frame baselines, image diffs, and eventually GPU performance regressions.
 
 ## Build
 
@@ -18,7 +18,7 @@ The binary is written to `build/rendercheck`.
 - C++20 compiler (`clang++` or `g++`)
 - Vulkan loader or MoltenVK for Vulkan diagnostics
 
-No Vulkan SDK headers or third-party libraries are required to build the current version.
+No Vulkan SDK headers or third-party libraries are required.
 
 ## Setup
 
@@ -35,10 +35,14 @@ This creates `rendercheck.toml`:
 name = "renderer"
 command = "./build/app"
 cwd = "."
+baseline_dir = "rendercheck/baselines"
 
-[validation]
-vulkan = true
-fail_on_warning = false
+[[test]]
+name = "triangle"
+args = "--scene tests/triangle.scene --headless"
+capture = true
+pixel_threshold = 0
+max_changed_percent = 0.0
 ```
 
 ## Usage
@@ -51,11 +55,85 @@ rendercheck doctor --verbose
 rendercheck init
 rendercheck run
 rendercheck run triangle
+rendercheck diff triangle
+rendercheck approve triangle
 ```
 
-### Doctor
+## Visual regression tests
 
-`rendercheck doctor` checks the machine before a renderer test is started:
+Set `capture = true` on a test. RendererCheck then exposes a deterministic capture target to the renderer process:
+
+```text
+RENDERCHECK=1
+RENDERCHECK_TEST=triangle
+RENDERCHECK_OUTPUT_DIR=/absolute/path/.rendercheck/triangle
+RENDERCHECK_CAPTURE_PATH=/absolute/path/.rendercheck/triangle/actual.ppm
+RENDERCHECK_CAPTURE_FORMAT=ppm-rgb8
+```
+
+The renderer writes one RGB8 frame to `RENDERCHECK_CAPTURE_PATH`. RendererCheck compares it against the committed baseline after the process exits successfully.
+
+A small C/C++ helper is included:
+
+```cpp
+#include <rendercheck/capture.h>
+
+// pixels = tightly packed RGBA8 framebuffer
+rendercheck_capture_rgba8(pixels, width, height, 0);
+```
+
+The first run has no baseline and intentionally fails:
+
+```text
+triangle
+  [ok] process (12 ms)
+  [fail] baseline missing: rendercheck/baselines/triangle.ppm
+  actual: .rendercheck/triangle/actual.ppm
+  approve: rendercheck approve triangle
+```
+
+After checking the captured frame:
+
+```bash
+rendercheck approve triangle
+```
+
+Future runs compare against that baseline:
+
+```text
+triangle
+  [ok] process (11 ms)
+  capture: 1280x720 PPM
+  changed: 0.000% (0/921600 pixels)
+  rmse: 0.000
+  [ok] image matches baseline
+```
+
+A regression fails CI and writes `.rendercheck/<test>/diff.ppm`.
+
+### Tolerance
+
+`pixel_threshold` ignores per-channel differences up to the given RGB8 value. `max_changed_percent` controls how many pixels may exceed that threshold.
+
+```toml
+[[test]]
+name = "pbr"
+capture = true
+pixel_threshold = 2
+max_changed_percent = 0.05
+```
+
+A custom baseline path can be set per test:
+
+```toml
+baseline = "tests/baselines/pbr.ppm"
+```
+
+PPM/P6 is the first capture format because it is deterministic, trivial for native engines to emit, and keeps RendererCheck dependency-free. PNG support can be added later without changing the capture contract.
+
+## Doctor
+
+`rendercheck doctor` checks the machine before renderer tests are started:
 
 ```text
 RendererCheck doctor
@@ -82,43 +160,6 @@ It currently checks:
 - `vulkaninfo` availability
 - broken `VK_LAYER_PATH`, `VK_ICD_FILENAMES`, and `VK_DRIVER_FILES` entries
 
-### Run
-
-With no `[[test]]` entries, `rendercheck run` executes `[project].command` once and forwards its stdout/stderr directly to the terminal.
-
-Tests can provide their own arguments or command:
-
-```toml
-[project]
-name = "engine"
-command = "./build/app"
-
-[[test]]
-name = "triangle"
-args = "--scene tests/triangle.scene --headless"
-
-[[test]]
-name = "shadows"
-args = "--scene tests/shadows.scene --headless"
-```
-
-```bash
-rendercheck run
-rendercheck run shadows
-```
-
-Every child process receives:
-
-```text
-RENDERCHECK=1
-RENDERCHECK_TEST=<test name>
-RENDERCHECK_OUTPUT_DIR=<absolute output directory>
-```
-
-The output directory is `.rendercheck/<test>/`. This is the contract future framebuffer capture and metrics support will use.
-
-A non-zero renderer exit code fails the test and RendererCheck itself returns non-zero, so the command works directly in CI.
-
 ## Current status
 
 ### Works
@@ -127,57 +168,39 @@ A non-zero renderer exit code fails the test and RendererCheck itself returns no
 - macOS and Linux build targets
 - `rendercheck init`
 - `rendercheck run [test]`
+- `rendercheck diff [test]`
+- `rendercheck approve [test]`
 - small TOML subset for project/test configuration
 - renderer exit-code propagation for CI
-- per-test `.rendercheck/` output directories and environment contract
+- deterministic RGB8 PPM capture contract
+- header-only C/C++ RGB8 and RGBA8 capture helper
+- committed per-test baselines
+- per-channel tolerance and changed-pixel percentage threshold
+- RMSE and maximum channel-delta reporting
+- generated visual diff images
 - runtime Vulkan/MoltenVK loader discovery
-- Vulkan version/layer/extension diagnostics without Vulkan headers
 - validation-layer detection
-- environment path diagnostics
 - macOS + Linux GitHub Actions smoke build
 
 ### Not implemented yet
 
-- framebuffer capture
-- PNG baseline storage
-- image comparison and diff output
+- PNG capture/baselines
 - Vulkan validation message collection from child renderers
 - GPU timing regression tests
-- GitHub PR reports
+- GitHub PR reports and image artifacts
 - Metal backend
 - remote GPU test workers
 
 ## Roadmap
 
-1. image capture contract and baseline format
-2. image diff engine
-3. validation-layer capture
-4. performance thresholds
-5. GitHub Actions reports and artifacts
-6. Metal diagnostics
-7. multi-GPU test matrix
+1. validation-layer capture
+2. GPU timing and performance thresholds
+3. GitHub Actions reports and image artifacts
+4. PNG support
+5. Metal diagnostics
+6. multi-GPU test matrix
 
 The first supported rendering backend is Vulkan on Linux and Vulkan through MoltenVK on macOS.
-
-## Project layout
-
-```text
-RendererCheck/
-├── include/rendercheck/
-│   ├── config.h
-│   ├── doctor.h
-│   ├── run.h
-│   ├── version.h
-│   └── vulkan_min.h
-├── src/
-│   ├── config.cpp
-│   ├── doctor.cpp
-│   ├── main.cpp
-│   └── run.cpp
-├── .github/workflows/build.yml
-├── Makefile
-└── README.md
-```
 
 ## License
 
