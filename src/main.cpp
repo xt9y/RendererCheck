@@ -1,6 +1,7 @@
 #include "rendercheck/doctor.h"
 #include "rendercheck/run.h"
 #include "rendercheck/version.h"
+#include "rendercheck/visual.h"
 
 #include <filesystem>
 #include <fstream>
@@ -17,12 +18,11 @@ void print_help() {
         "Usage:\n"
         "  rendercheck init                create rendercheck.toml\n"
         "  rendercheck doctor [--verbose]  inspect the local graphics environment\n"
-        "  rendercheck run [test]          execute renderer tests\n"
+        "  rendercheck run [test]          execute renderer tests and visual checks\n"
+        "  rendercheck diff [test]         compare the latest capture with its baseline\n"
+        "  rendercheck approve [test]      accept the latest capture as baseline\n"
         "  rendercheck version             print version\n"
-        "  rendercheck help                show this help\n\n"
-        "Planned:\n"
-        "  rendercheck diff                compare captured frames\n"
-        "  rendercheck approve             accept a new baseline\n";
+        "  rendercheck help                show this help\n";
 }
 
 int init_project() {
@@ -42,14 +42,19 @@ int init_project() {
         "[project]\n"
         "name = \"renderer\"\n"
         "command = \"./build/app\"\n"
-        "cwd = \".\"\n\n"
+        "cwd = \".\"\n"
+        "baseline_dir = \"rendercheck/baselines\"\n\n"
         "[validation]\n"
         "vulkan = true\n"
         "fail_on_warning = false\n\n"
         "# Add one or more tests to run the project command with test-specific arguments.\n"
+        "# Set capture = true when the renderer writes RENDERCHECK_CAPTURE_PATH.\n"
         "# [[test]]\n"
         "# name = \"triangle\"\n"
-        "# args = \"--scene tests/triangle.scene --headless\"\n";
+        "# args = \"--scene tests/triangle.scene --headless\"\n"
+        "# capture = true\n"
+        "# pixel_threshold = 0\n"
+        "# max_changed_percent = 0.0\n";
 
     std::cout << "created rendercheck.toml\n";
     return 0;
@@ -82,10 +87,11 @@ int main(int argc, char** argv) {
 
     if (command == "init") return init_project();
 
-    if (command == "run") {
-        const std::string_view filter = argc >= 3 ? std::string_view(argv[2]) : std::string_view{};
-        return rendercheck::run_tests(filter);
-    }
+    const std::string_view filter = argc >= 3 ? std::string_view(argv[2]) : std::string_view{};
+
+    if (command == "run") return rendercheck::run_tests(filter);
+    if (command == "diff") return rendercheck::diff_captures(filter);
+    if (command == "approve") return rendercheck::approve_captures(filter);
 
     std::cerr << "unknown command: " << command << "\n\n";
     print_help();
