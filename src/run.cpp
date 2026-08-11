@@ -1,10 +1,12 @@
 #include "rendercheck/run.h"
 #include "rendercheck/config.h"
+#include "rendercheck/visual.h"
 
 #include <cerrno>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
+#include <iomanip>
 #include <iostream>
 #include <string>
 #include <string_view>
@@ -25,21 +27,11 @@ struct RunResult {
     double milliseconds = 0.0;
 };
 
-std::string safe_test_dir(std::string_view name) {
-    std::string result;
-    result.reserve(name.size());
-    for (const char c : name) {
-        const bool safe = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-                          (c >= '0' && c <= '9') || c == '-' || c == '_';
-        result.push_back(safe ? c : '_');
-    }
-    return result.empty() ? "project" : result;
-}
-
 RunResult run_process(const std::string& command,
                       const fs::path& cwd,
                       std::string_view test_name,
-                      const fs::path& output_dir) {
+                      const fs::path& output_dir,
+                      bool capture_enabled) {
     RunResult result;
     const auto started = std::chrono::steady_clock::now();
 
@@ -57,6 +49,15 @@ RunResult run_process(const std::string& command,
         ::setenv("RENDERCHECK", "1", 1);
         ::setenv("RENDERCHECK_TEST", test.c_str(), 1);
         ::setenv("RENDERCHECK_OUTPUT_DIR", output.c_str(), 1);
+
+        if (capture_enabled) {
+            const std::string capture = fs::absolute(rendercheck::capture_path(test_name)).string();
+            ::setenv("RENDERCHECK_CAPTURE_PATH", capture.c_str(), 1);
+            ::setenv("RENDERCHECK_CAPTURE_FORMAT", "ppm-rgb8", 1);
+        } else {
+            ::unsetenv("RENDERCHECK_CAPTURE_PATH");
+            ::unsetenv("RENDERCHECK_CAPTURE_FORMAT");
+        }
 
         if (::chdir(cwd.c_str()) != 0) {
             std::perror("rendercheck: chdir");
@@ -87,6 +88,7 @@ RunResult run_process(const std::string& command,
     (void)cwd;
     (void)test_name;
     (void)output_dir;
+    (void)capture_enabled;
     std::cerr << "  [fail] process execution is unsupported on this platform\n";
 #endif
 
@@ -148,7 +150,7 @@ int run_tests(std::string_view filter) {
     std::size_t failed = 0;
 
     for (const auto& selected_test : selected) {
-        const fs::path output_dir = fs::path(".rendercheck") / safe_test_dir(selected_test.name);
+        const fs::path output_dir = capture_output_dir(selected_test.name);
         std::error_code ec;
         fs::create_directories(output_dir, ec);
         if (ec) {
@@ -157,21 +159,63 @@ int run_tests(std::string_view filter) {
             continue;
         }
 
+        const VisualConfig& visual = visual_config(config, selected_test.test);
+        if (visual.capture) {
+            fs::remove(capture_path(selected_test.name), ec);
+            ec.clear();
+            fs::remove(output_dir / "diff.ppm", ec);
+        }
+
         const std::string command = build_command(config, selected_test.test);
         const fs::path cwd = working_directory(config, selected_test.test);
 
         std::cout << selected_test.name << '\n';
         std::cout << "  command: " << command << '\n';
 
-        const RunResult result = run_process(command, cwd, selected_test.name, output_dir);
-        if (result.exit_code == 0) {
-            std::cout << "  [ok] process (" << static_cast<long long>(result.milliseconds) << " ms)\n\n";
-            ++passed;
-        } else {
+        const RunResult result = run_process(command, cwd, selected_test.name, output_dir, visual.capture);
+        if (result.exit_code != 0) {
             std::cout << "  [fail] process exited " << result.exit_code
                       << " (" << static_cast<long long>(result.milliseconds) << " ms)\n\n";
             ++failed;
+            continue;
         }
+
+        std::cout << "  [ok] process (" << static_cast<long long>(result.milliseconds) << " ms)\n";
+
+        if (!visual.capture) {
+            std::cout << '\n';
+            ++passed;
+            continue;
+        }
+
+        VisualResult visual_result;
+        if (!evaluate_capture(config, selected_test.name, selected_test.test, visual_result, error)) {
+            if (visual_result.baseline_missing) {
+                std::cout << "  [fail] " << error << '\n'
+                          << "  actual: " << visual_result.actual_path.string() << '\n'
+                          << "  approve: rendercheck approve " << selected_test.name << "\n\n";
+            } else {
+                std::cout << "  [fail] image: " << error << "\n\n";
+            }
+            ++failed;
+            continue;
+        }
+
+        std::cout << std::fixed << std::setprecision(3)
+                  << "  capture: " << visual_result.width << 'x' << visual_result.height << " PPM\n"
+                  << "  changed: " << visual_result.changed_percent << "% ("
+                  << visual_result.changed_pixels << '/' << visual_result.total_pixels << " pixels)\n"
+                  << "  rmse: " << visual_result.rmse << '\n';
+
+        if (!visual_result.passed) {
+            std::cout << "  [fail] visual regression\n"
+                      << "  diff: " << visual_result.diff_path.string() << "\n\n";
+            ++failed;
+            continue;
+        }
+
+        std::cout << "  [ok] image matches baseline\n\n";
+        ++passed;
     }
 
     std::cout << "Summary: " << passed << " passed, " << failed << " failed\n";

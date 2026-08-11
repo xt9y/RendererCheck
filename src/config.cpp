@@ -1,7 +1,10 @@
 #include "rendercheck/config.h"
 
+#include <cerrno>
 #include <cctype>
+#include <cstdlib>
 #include <fstream>
+#include <limits>
 #include <string>
 #include <string_view>
 
@@ -85,6 +88,70 @@ bool parse_bool(std::string_view value, bool& out) {
     return false;
 }
 
+bool parse_uint(std::string_view value, std::uint32_t& out) {
+    const std::string v = trim(value);
+    if (v.empty() || v.front() == '-') return false;
+
+    char* end = nullptr;
+    errno = 0;
+    const unsigned long parsed = std::strtoul(v.c_str(), &end, 10);
+    if (errno != 0 || end != v.c_str() + v.size() || parsed > std::numeric_limits<std::uint32_t>::max()) {
+        return false;
+    }
+    out = static_cast<std::uint32_t>(parsed);
+    return true;
+}
+
+bool parse_double(std::string_view value, double& out) {
+    const std::string v = trim(value);
+    if (v.empty()) return false;
+
+    char* end = nullptr;
+    errno = 0;
+    const double parsed = std::strtod(v.c_str(), &end);
+    if (errno != 0 || end != v.c_str() + v.size()) return false;
+    out = parsed;
+    return true;
+}
+
+bool parse_visual_key(const std::string& key,
+                      std::string_view value,
+                      VisualConfig& visual,
+                      std::string& error,
+                      const std::filesystem::path& path,
+                      std::size_t line_number) {
+    auto fail = [&](std::string_view expectation) {
+        error = path.string() + ':' + std::to_string(line_number) + ": expected " +
+                std::string(expectation) + " for " + key;
+        return false;
+    };
+
+    if (key == "capture") {
+        if (!parse_bool(value, visual.capture)) return fail("true or false");
+        return true;
+    }
+    if (key == "baseline") {
+        std::string baseline;
+        if (!parse_string(value, baseline)) return fail("quoted string");
+        visual.baseline = baseline;
+        return true;
+    }
+    if (key == "pixel_threshold") {
+        if (!parse_uint(value, visual.pixel_threshold) || visual.pixel_threshold > 255) {
+            return fail("integer from 0 to 255");
+        }
+        return true;
+    }
+    if (key == "max_changed_percent") {
+        if (!parse_double(value, visual.max_changed_percent) ||
+            visual.max_changed_percent < 0.0 || visual.max_changed_percent > 100.0) {
+            return fail("number from 0 to 100");
+        }
+        return true;
+    }
+    return false;
+}
+
 } // namespace
 
 bool load_config(const std::filesystem::path& path, Config& config, std::string& error) {
@@ -149,6 +216,13 @@ bool load_config(const std::filesystem::path& path, Config& config, std::string&
                 std::string cwd;
                 if (!string_value(cwd)) return false;
                 config.project.cwd = cwd;
+            } else if (key == "baseline_dir") {
+                std::string baseline_dir;
+                if (!string_value(baseline_dir)) return false;
+                config.project.baseline_dir = baseline_dir;
+            } else if (key == "capture" || key == "baseline" || key == "pixel_threshold" ||
+                       key == "max_changed_percent") {
+                if (!parse_visual_key(key, value, config.project.visual, error, path, line_number)) return false;
             }
         } else if (section == Section::Test && current_test) {
             if (key == "name") {
@@ -166,6 +240,9 @@ bool load_config(const std::filesystem::path& path, Config& config, std::string&
                     error = path.string() + ':' + std::to_string(line_number) + ": expected true or false for enabled";
                     return false;
                 }
+            } else if (key == "capture" || key == "baseline" || key == "pixel_threshold" ||
+                       key == "max_changed_percent") {
+                if (!parse_visual_key(key, value, current_test->visual, error, path, line_number)) return false;
             }
         }
     }
