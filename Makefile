@@ -6,6 +6,13 @@ HEADERS = include/rendercheck/doctor.h include/rendercheck/config.h include/rend
 CXXFLAGS ?= -std=c++20 -O2 -Wall -Wextra -Wpedantic
 CPPFLAGS += -Iinclude
 
+PREFIX ?= /usr/local
+BINDIR ?= $(PREFIX)/bin
+INCLUDEDIR ?= $(PREFIX)/include
+INSTALL ?= install
+INSTALL_PROGRAM ?= $(INSTALL) -m 755
+INSTALL_DATA ?= $(INSTALL) -m 644
+
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Linux)
 LDLIBS += -ldl
@@ -53,9 +60,30 @@ test: $(PRODUCT)
 	  printf '%s\n' '#!/bin/sh' 'printf "P6\n1 1\n255\n\000\000\377" > "$$RENDERCHECK_CAPTURE_PATH"' > renderer; \
 	  ! $(CURDIR)/$(PRODUCT) run pixel >/dev/null; \
 	  test -f .rendercheck/pixel/diff.ppm
+	@tmp=$$(mktemp -d); \
+	  $(MAKE) install DESTDIR=$$tmp >/dev/null; \
+	  test -x "$$tmp$(BINDIR)/rendercheck"; \
+	  test -f "$$tmp$(INCLUDEDIR)/rendercheck/capture.h"; \
+	  "$$tmp$(BINDIR)/rendercheck" version >/dev/null; \
+	  $(MAKE) uninstall DESTDIR=$$tmp >/dev/null; \
+	  test ! -e "$$tmp$(BINDIR)/rendercheck"; \
+	  test ! -e "$$tmp$(INCLUDEDIR)/rendercheck/capture.h"
 	@echo "All smoke tests passed"
+
+install: $(PRODUCT)
+	$(INSTALL) -d "$(DESTDIR)$(BINDIR)"
+	$(INSTALL_PROGRAM) $(PRODUCT) "$(DESTDIR)$(BINDIR)/rendercheck"
+	$(INSTALL) -d "$(DESTDIR)$(INCLUDEDIR)/rendercheck"
+	$(INSTALL_DATA) include/rendercheck/capture.h "$(DESTDIR)$(INCLUDEDIR)/rendercheck/capture.h"
+	@echo "Installed rendercheck to $(DESTDIR)$(BINDIR)/rendercheck"
+
+uninstall:
+	rm -f "$(DESTDIR)$(BINDIR)/rendercheck"
+	rm -f "$(DESTDIR)$(INCLUDEDIR)/rendercheck/capture.h"
+	-rmdir "$(DESTDIR)$(INCLUDEDIR)/rendercheck" 2>/dev/null
+	@echo "Uninstalled rendercheck from $(DESTDIR)$(PREFIX)"
 
 clean:
 	rm -rf $(BUILD_DIR)
 
-.PHONY: all test clean
+.PHONY: all test install uninstall clean
