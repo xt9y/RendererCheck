@@ -89,6 +89,27 @@ rendercheck diff triangle
 rendercheck approve triangle
 ```
 
+## Examples
+
+Ready-to-run project integrations live in [`examples/`](examples/):
+
+- [`examples/basic-c`](examples/basic-c) — dependency-free C renderer using framebuffer capture and GPU metrics
+- [`examples/raylib`](examples/raylib) — raylib framebuffer capture with `LoadImageFromScreen()`
+
+The basic C example is built and executed on both macOS and Linux in RendererCheck's own CI.
+
+Typical first use:
+
+```bash
+cd examples/basic-c
+make
+rendercheck run
+rendercheck approve gradient
+rendercheck run
+```
+
+The first run intentionally fails because there is no reviewed baseline yet.
+
 ## Vulkan validation
 
 When `[validation].vulkan = true`, RendererCheck asks the Vulkan loader to enable `VK_LAYER_KHRONOS_validation`, captures the child renderer's stderr to `.rendercheck/<test>/validation.log`, and scans validation output for errors, warnings, and VUIDs.
@@ -246,6 +267,7 @@ Upload the complete artifact bundle with:
 - automatic GitHub Actions job summaries
 - artifact-ready `.rendercheck/` output bundle
 - stable collision-resistant test artifact names
+- dependency-free C and raylib project examples
 - runtime Vulkan/MoltenVK diagnostics
 - macOS + Linux GitHub Actions smoke build
 
