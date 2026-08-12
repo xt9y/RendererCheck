@@ -1,3 +1,3 @@
 #pragma once
 
-#define RENDERCHECK_VERSION "0.2.0-dev"
+#define RENDERCHECK_VERSION "0.3.0-dev"
