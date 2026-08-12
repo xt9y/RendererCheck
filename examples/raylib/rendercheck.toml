@@ -1,0 +1,16 @@
+[project]
+name = "raylib"
+command = "./raylib-rendercheck"
+cwd = "."
+baseline_dir = "baselines"
+
+[validation]
+vulkan = false
+fail_on_error = true
+fail_on_warning = false
+
+[[test]]
+name = "raylib-frame"
+capture = true
+pixel_threshold = 1
+max_changed_percent = 0.01
