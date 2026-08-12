@@ -2,6 +2,7 @@
 
 #include <cerrno>
 #include <cctype>
+#include <cmath>
 #include <cstdlib>
 #include <fstream>
 #include <limits>
@@ -67,6 +68,8 @@ bool parse_string(std::string_view value, std::string& out) {
             escaped = false;
         } else if (c == '\\') {
             escaped = true;
+        } else if (c == '"') {
+            return false;
         } else {
             out.push_back(c);
         }
@@ -109,8 +112,22 @@ bool parse_double(std::string_view value, double& out) {
     char* end = nullptr;
     errno = 0;
     const double parsed = std::strtod(v.c_str(), &end);
-    if (errno != 0 || end != v.c_str() + v.size()) return false;
+    if (errno != 0 || end != v.c_str() + v.size() || !std::isfinite(parsed)) return false;
     out = parsed;
+    return true;
+}
+
+bool parse_nonnegative_double(const std::string& key,
+                              std::string_view value,
+                              double& out,
+                              std::string& error,
+                              const std::filesystem::path& path,
+                              std::size_t line_number) {
+    if (!parse_double(value, out) || out < 0.0) {
+        error = path.string() + ':' + std::to_string(line_number) +
+                ": expected non-negative number for " + key;
+        return false;
+    }
     return true;
 }
 
@@ -155,13 +172,15 @@ bool parse_visual_key(const std::string& key,
 } // namespace
 
 bool load_config(const std::filesystem::path& path, Config& config, std::string& error) {
+    config = {};
+
     std::ifstream in(path);
     if (!in) {
         error = "could not open " + path.string();
         return false;
     }
 
-    enum class Section { None, Project, Test, Other };
+    enum class Section { None, Project, Validation, Performance, Test, Other };
     Section section = Section::None;
     TestConfig* current_test = nullptr;
 
@@ -175,6 +194,16 @@ bool load_config(const std::filesystem::path& path, Config& config, std::string&
 
         if (line == "[project]") {
             section = Section::Project;
+            current_test = nullptr;
+            continue;
+        }
+        if (line == "[validation]") {
+            section = Section::Validation;
+            current_test = nullptr;
+            continue;
+        }
+        if (line == "[performance]") {
+            section = Section::Performance;
             current_test = nullptr;
             continue;
         }
@@ -224,6 +253,29 @@ bool load_config(const std::filesystem::path& path, Config& config, std::string&
                        key == "max_changed_percent") {
                 if (!parse_visual_key(key, value, config.project.visual, error, path, line_number)) return false;
             }
+        } else if (section == Section::Validation) {
+            if (key == "vulkan") {
+                if (!parse_bool(value, config.validation.vulkan)) {
+                    error = path.string() + ':' + std::to_string(line_number) + ": expected true or false for vulkan";
+                    return false;
+                }
+            } else if (key == "fail_on_warning") {
+                if (!parse_bool(value, config.validation.fail_on_warning)) {
+                    error = path.string() + ':' + std::to_string(line_number) + ": expected true or false for fail_on_warning";
+                    return false;
+                }
+            } else if (key == "fail_on_error") {
+                if (!parse_bool(value, config.validation.fail_on_error)) {
+                    error = path.string() + ':' + std::to_string(line_number) + ": expected true or false for fail_on_error";
+                    return false;
+                }
+            }
+        } else if (section == Section::Performance) {
+            if (key == "max_gpu_ms") {
+                if (!parse_nonnegative_double(key, value, config.performance.max_gpu_ms, error, path, line_number)) return false;
+            } else if (key == "max_process_ms") {
+                if (!parse_nonnegative_double(key, value, config.performance.max_process_ms, error, path, line_number)) return false;
+            }
         } else if (section == Section::Test && current_test) {
             if (key == "name") {
                 if (!string_value(current_test->name)) return false;
@@ -243,6 +295,12 @@ bool load_config(const std::filesystem::path& path, Config& config, std::string&
             } else if (key == "capture" || key == "baseline" || key == "pixel_threshold" ||
                        key == "max_changed_percent") {
                 if (!parse_visual_key(key, value, current_test->visual, error, path, line_number)) return false;
+            } else if (key == "max_gpu_ms") {
+                if (!parse_nonnegative_double(key, value, current_test->performance.max_gpu_ms, error, path, line_number)) return false;
+                current_test->has_max_gpu_ms = true;
+            } else if (key == "max_process_ms") {
+                if (!parse_nonnegative_double(key, value, current_test->performance.max_process_ms, error, path, line_number)) return false;
+                current_test->has_max_process_ms = true;
             }
         }
     }
