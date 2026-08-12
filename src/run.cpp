@@ -1,4 +1,5 @@
 #include "rendercheck/run.h"
+#include "rendercheck/checks.h"
 #include "rendercheck/config.h"
 #include "rendercheck/visual.h"
 
@@ -31,7 +32,8 @@ RunResult run_process(const std::string& command,
                       const fs::path& cwd,
                       std::string_view test_name,
                       const fs::path& output_dir,
-                      bool capture_enabled) {
+                      bool capture_enabled,
+                      const ValidationConfig& validation) {
     RunResult result;
     const auto started = std::chrono::steady_clock::now();
 
@@ -59,6 +61,8 @@ RunResult run_process(const std::string& command,
             ::unsetenv("RENDERCHECK_CAPTURE_FORMAT");
         }
 
+        if (!prepare_child_checks(test_name, output_dir, validation)) _exit(125);
+
         if (::chdir(cwd.c_str()) != 0) {
             std::perror("rendercheck: chdir");
             _exit(126);
@@ -78,17 +82,15 @@ RunResult run_process(const std::string& command,
         return result;
     }
 
-    if (WIFEXITED(status)) {
-        result.exit_code = WEXITSTATUS(status);
-    } else if (WIFSIGNALED(status)) {
-        result.exit_code = 128 + WTERMSIG(status);
-    }
+    if (WIFEXITED(status)) result.exit_code = WEXITSTATUS(status);
+    else if (WIFSIGNALED(status)) result.exit_code = 128 + WTERMSIG(status);
 #else
     (void)command;
     (void)cwd;
     (void)test_name;
     (void)output_dir;
     (void)capture_enabled;
+    (void)validation;
     std::cerr << "  [fail] process execution is unsupported on this platform\n";
 #endif
 
@@ -145,22 +147,33 @@ int run_tests(std::string_view filter) {
     }
 
     std::cout << "RendererCheck run\n\n";
-
     std::size_t passed = 0;
     std::size_t failed = 0;
+    std::vector<TestReport> reports;
 
     for (const auto& selected_test : selected) {
+        TestReport report;
+        report.name = selected_test.name;
+        bool test_passed = true;
+
         const fs::path output_dir = capture_output_dir(selected_test.name);
         std::error_code ec;
         fs::create_directories(output_dir, ec);
         if (ec) {
             std::cerr << selected_test.name << "\n  [fail] could not create " << output_dir.string() << "\n\n";
+            report.detail = "could not create output directory";
+            reports.push_back(report);
             ++failed;
             continue;
         }
 
         const VisualConfig& visual = visual_config(config, selected_test.test);
+        const PerformanceConfig performance = performance_config(config, selected_test.test);
+        fs::remove(metrics_path(selected_test.name), ec);
+        ec.clear();
+        fs::remove(validation_path(selected_test.name), ec);
         if (visual.capture) {
+            ec.clear();
             fs::remove(capture_path(selected_test.name), ec);
             ec.clear();
             fs::remove(output_dir / "diff.ppm", ec);
@@ -168,57 +181,104 @@ int run_tests(std::string_view filter) {
 
         const std::string command = build_command(config, selected_test.test);
         const fs::path cwd = working_directory(config, selected_test.test);
+        std::cout << selected_test.name << '\n' << "  command: " << command << '\n';
 
-        std::cout << selected_test.name << '\n';
-        std::cout << "  command: " << command << '\n';
-
-        const RunResult result = run_process(command, cwd, selected_test.name, output_dir, visual.capture);
-        if (result.exit_code != 0) {
-            std::cout << "  [fail] process exited " << result.exit_code
-                      << " (" << static_cast<long long>(result.milliseconds) << " ms)\n\n";
-            ++failed;
-            continue;
+        const RunResult run = run_process(command, cwd, selected_test.name, output_dir, visual.capture, config.validation);
+        report.process_ms = run.milliseconds;
+        if (run.exit_code == 0) {
+            std::cout << "  [ok] process (" << static_cast<long long>(run.milliseconds) << " ms)\n";
+        } else {
+            std::cout << "  [fail] process exited " << run.exit_code << " (" << static_cast<long long>(run.milliseconds) << " ms)\n";
+            report.detail = "process exited " + std::to_string(run.exit_code);
+            test_passed = false;
         }
 
-        std::cout << "  [ok] process (" << static_cast<long long>(result.milliseconds) << " ms)\n";
-
-        if (!visual.capture) {
-            std::cout << '\n';
-            ++passed;
-            continue;
-        }
-
-        VisualResult visual_result;
-        if (!evaluate_capture(config, selected_test.name, selected_test.test, visual_result, error)) {
-            if (visual_result.baseline_missing) {
-                std::cout << "  [fail] " << error << '\n'
-                          << "  actual: " << visual_result.actual_path.string() << '\n'
-                          << "  approve: rendercheck approve " << selected_test.name << "\n\n";
+        if (config.validation.vulkan) {
+            report.validation_checked = true;
+            const ValidationResult validation = analyze_validation(selected_test.name, config.validation);
+            report.validation_errors = validation.errors;
+            report.validation_warnings = validation.warnings;
+            report.validation_vuids = validation.vuids;
+            std::cout << "  validation: " << validation.errors << " errors, " << validation.warnings
+                      << " warnings, " << validation.vuids << " VUIDs\n";
+            if (!validation.passed) {
+                std::cout << "  [fail] Vulkan validation policy\n";
+                if (report.detail.empty()) report.detail = "Vulkan validation policy failed";
+                test_passed = false;
+            } else if (validation.warnings != 0) {
+                std::cout << "  [warn] Vulkan validation warnings allowed\n";
             } else {
-                std::cout << "  [fail] image: " << error << "\n\n";
+                std::cout << "  [ok] Vulkan validation\n";
             }
-            ++failed;
-            continue;
         }
 
-        std::cout << std::fixed << std::setprecision(3)
-                  << "  capture: " << visual_result.width << 'x' << visual_result.height << " PPM\n"
-                  << "  changed: " << visual_result.changed_percent << "% ("
-                  << visual_result.changed_pixels << '/' << visual_result.total_pixels << " pixels)\n"
-                  << "  rmse: " << visual_result.rmse << '\n';
+        const PerformanceResult perf = analyze_performance(selected_test.name, run.milliseconds, performance);
+        report.gpu_samples = perf.gpu_samples;
+        report.gpu_average_ms = perf.gpu_average_ms;
+        report.gpu_max_ms = perf.gpu_max_ms;
+        if (performance.max_process_ms > 0.0) {
+            std::cout << std::fixed << std::setprecision(3)
+                      << "  process budget: " << run.milliseconds << " / " << performance.max_process_ms << " ms\n";
+        }
+        if (perf.gpu_samples != 0) {
+            std::cout << std::fixed << std::setprecision(3)
+                      << "  gpu: avg " << perf.gpu_average_ms << " ms, max " << perf.gpu_max_ms
+                      << " ms (" << perf.gpu_samples << " samples)\n";
+        }
+        if (perf.gpu_missing) {
+            std::cout << "  [fail] GPU timing required but renderer reported no gpu_ms samples\n";
+            if (report.detail.empty()) report.detail = "GPU timing sample missing";
+        }
+        if (perf.process_over_budget) {
+            std::cout << "  [fail] process time exceeded budget\n";
+            if (report.detail.empty()) report.detail = "process time exceeded budget";
+        }
+        if (perf.gpu_over_budget) {
+            std::cout << "  [fail] GPU time exceeded budget of " << performance.max_gpu_ms << " ms\n";
+            if (report.detail.empty()) report.detail = "GPU time exceeded budget";
+        }
+        if (!perf.passed) test_passed = false;
 
-        if (!visual_result.passed) {
-            std::cout << "  [fail] visual regression\n"
-                      << "  diff: " << visual_result.diff_path.string() << "\n\n";
-            ++failed;
-            continue;
+        if (run.exit_code == 0 && visual.capture) {
+            report.visual_checked = true;
+            VisualResult visual_result;
+            if (!evaluate_capture(config, selected_test.name, selected_test.test, visual_result, error)) {
+                if (visual_result.baseline_missing) {
+                    std::cout << "  [fail] " << error << '\n'
+                              << "  actual: " << visual_result.actual_path.string() << '\n'
+                              << "  approve: rendercheck approve " << selected_test.name << '\n';
+                } else {
+                    std::cout << "  [fail] image: " << error << '\n';
+                }
+                if (report.detail.empty()) report.detail = error;
+                test_passed = false;
+            } else {
+                report.changed_percent = visual_result.changed_percent;
+                std::cout << std::fixed << std::setprecision(3)
+                          << "  capture: " << visual_result.width << 'x' << visual_result.height << " PPM\n"
+                          << "  changed: " << visual_result.changed_percent << "% ("
+                          << visual_result.changed_pixels << '/' << visual_result.total_pixels << " pixels)\n"
+                          << "  rmse: " << visual_result.rmse << '\n';
+                if (!visual_result.passed) {
+                    std::cout << "  [fail] visual regression\n" << "  diff: " << visual_result.diff_path.string() << '\n';
+                    if (report.detail.empty()) report.detail = "visual regression";
+                    test_passed = false;
+                } else {
+                    std::cout << "  [ok] image matches baseline\n";
+                }
+            }
         }
 
-        std::cout << "  [ok] image matches baseline\n\n";
-        ++passed;
+        report.passed = test_passed;
+        if (test_passed) ++passed;
+        else ++failed;
+        reports.push_back(report);
+        std::cout << '\n';
     }
 
-    std::cout << "Summary: " << passed << " passed, " << failed << " failed\n";
+    write_reports(reports, passed, failed);
+    std::cout << "Summary: " << passed << " passed, " << failed << " failed\n"
+              << "Report: .rendercheck/report.md\n";
     return failed == 0 ? 0 : 1;
 }
 
