@@ -1,0 +1,20 @@
+[project]
+name = "basic-c"
+command = "./basic"
+cwd = "."
+baseline_dir = "baselines"
+
+[validation]
+vulkan = false
+fail_on_error = true
+fail_on_warning = false
+
+[performance]
+max_gpu_ms = 4.0
+max_process_ms = 250.0
+
+[[test]]
+name = "gradient"
+capture = true
+pixel_threshold = 0
+max_changed_percent = 0.0
