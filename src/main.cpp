@@ -18,7 +18,7 @@ void print_help() {
         "Usage:\n"
         "  rendercheck init                create rendercheck.toml\n"
         "  rendercheck doctor [--verbose]  inspect the local graphics environment\n"
-        "  rendercheck run [test]          execute renderer tests and visual checks\n"
+        "  rendercheck run [test]          execute renderer tests and checks\n"
         "  rendercheck diff [test]         compare the latest capture with its baseline\n"
         "  rendercheck approve [test]      accept the latest capture as baseline\n"
         "  rendercheck version             print version\n"
@@ -46,15 +46,21 @@ int init_project() {
         "baseline_dir = \"rendercheck/baselines\"\n\n"
         "[validation]\n"
         "vulkan = true\n"
+        "fail_on_error = true\n"
         "fail_on_warning = false\n\n"
+        "[performance]\n"
+        "# max_gpu_ms = 16.67\n"
+        "# max_process_ms = 1000.0\n\n"
         "# Add one or more tests to run the project command with test-specific arguments.\n"
         "# Set capture = true when the renderer writes RENDERCHECK_CAPTURE_PATH.\n"
+        "# Report GPU timings with rendercheck_gpu_ms() from <rendercheck/metrics.h>.\n"
         "# [[test]]\n"
         "# name = \"triangle\"\n"
         "# args = \"--scene tests/triangle.scene --headless\"\n"
         "# capture = true\n"
         "# pixel_threshold = 0\n"
-        "# max_changed_percent = 0.0\n";
+        "# max_changed_percent = 0.0\n"
+        "# max_gpu_ms = 16.67\n";
 
     std::cout << "created rendercheck.toml\n";
     return 0;
