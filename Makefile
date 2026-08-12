@@ -46,7 +46,7 @@ test: $(PRODUCT)
 	  ! $(CURDIR)/$(PRODUCT) run >/dev/null
 	@tmp=$$(mktemp -d); \
 	  cd $$tmp; \
-	  printf '[project]\nname = "engine"\ncommand = "test \"x$$RENDERCHECK\" = x1"\n\n[[test]]\nname = "triangle"\nargs = ""\n' > rendercheck.toml; \
+	  printf '[project]\nname = "engine"\ncommand = "test x$$RENDERCHECK = x1"\n\n[[test]]\nname = "triangle"\nargs = ""\n' > rendercheck.toml; \
 	  $(CURDIR)/$(PRODUCT) run triangle >/dev/null
 	@tmp=$$(mktemp -d); \
 	  cd $$tmp; \
