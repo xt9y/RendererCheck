@@ -14,6 +14,17 @@ struct VisualConfig {
     double max_changed_percent = 0.0;
 };
 
+struct ValidationConfig {
+    bool vulkan = false;
+    bool fail_on_warning = false;
+    bool fail_on_error = true;
+};
+
+struct PerformanceConfig {
+    double max_gpu_ms = 0.0;
+    double max_process_ms = 0.0;
+};
+
 struct ProjectConfig {
     std::string name = "renderer";
     std::string command;
@@ -29,10 +40,15 @@ struct TestConfig {
     std::filesystem::path cwd;
     bool enabled = true;
     VisualConfig visual;
+    PerformanceConfig performance;
+    bool has_max_gpu_ms = false;
+    bool has_max_process_ms = false;
 };
 
 struct Config {
     ProjectConfig project;
+    ValidationConfig validation;
+    PerformanceConfig performance;
     std::vector<TestConfig> tests;
 };
 
