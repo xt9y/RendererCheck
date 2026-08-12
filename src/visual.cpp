@@ -1,9 +1,11 @@
 #include "rendercheck/visual.h"
 #include "rendercheck/image.h"
 
+#include <cstdint>
 #include <filesystem>
 #include <iomanip>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -44,17 +46,38 @@ void print_metrics(const VisualResult& result) {
               << "  max channel delta: " << static_cast<unsigned>(result.max_channel_delta) << "\n";
 }
 
+std::uint32_t fnv1a(std::string_view value) {
+    std::uint32_t hash = 2166136261u;
+    for (const unsigned char c : value) {
+        hash ^= c;
+        hash *= 16777619u;
+    }
+    return hash;
+}
+
 } // namespace
 
 std::string safe_test_name(std::string_view name) {
+    if (name.empty()) return "project";
+
     std::string result;
-    result.reserve(name.size());
+    result.reserve(name.size() + 9);
+    bool changed = false;
+
     for (const char c : name) {
         const bool safe = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
                           (c >= '0' && c <= '9') || c == '-' || c == '_';
         result.push_back(safe ? c : '_');
+        changed = changed || !safe;
     }
-    return result.empty() ? "project" : result;
+
+    if (changed) {
+        std::ostringstream suffix;
+        suffix << '-' << std::hex << std::setw(8) << std::setfill('0') << fnv1a(name);
+        result += suffix.str();
+    }
+
+    return result;
 }
 
 fs::path capture_output_dir(std::string_view name) {
@@ -125,7 +148,7 @@ bool evaluate_capture(const Config& config,
 
     std::error_code ec;
     fs::remove(result.diff_path, ec);
-    if (result.changed_pixels != 0) {
+    if (!result.passed && result.changed_pixels != 0) {
         if (!save_ppm(result.diff_path, diff, error)) return false;
     }
 
