@@ -26,6 +26,7 @@ $(PRODUCT): $(SOURCES) $(HEADERS)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(SOURCES) $(LDLIBS) -o $@
 	@echo "Build complete: $(PRODUCT)"
 
+test: export RENDERCHECK_HEADLESS_AUTO=0
 test: $(PRODUCT)
 	./$(PRODUCT) version
 	./$(PRODUCT) help | grep -q doctor
@@ -88,7 +89,7 @@ test: $(PRODUCT)
 	  printf '%s\n' '#!/bin/sh' 'test "$$LIBGL_ALWAYS_SOFTWARE" = "1"' 'test "$$RENDERCHECK_HEADLESS_BACKEND" = "xvfb"' 'printf "gpu_ms=999.000\n" >> "$$RENDERCHECK_METRICS_PATH"' > renderer; \
 	  chmod +x renderer; \
 	  printf '[project]\nname = "headless"\ncommand = "./renderer"\n\n[validation]\nvulkan = false\n\n[performance]\nmax_gpu_ms = 1.0\n' > rendercheck.toml; \
-	  DISPLAY= WAYLAND_DISPLAY= PATH="$$tmp/bin:$$PATH" $(CURDIR)/$(PRODUCT) run >/dev/null; \
+	  RENDERCHECK_HEADLESS_AUTO=1 DISPLAY= WAYLAND_DISPLAY= PATH="$$tmp/bin:$$PATH" $(CURDIR)/$(PRODUCT) run >/dev/null; \
 	  test -f .rendercheck/headless/software-renderer; \
 	  grep -q '"timing_kind": "software_render"' .rendercheck/results.json; \
 	  grep -q 'software max 999.00 ms' .rendercheck/report.md; \
