@@ -16,3 +16,13 @@ jobs:
         run: make
       - name: Smoke tests
         run: make test
+      - name: Basic C example
+        shell: bash
+        run: |
+          make -C examples/basic-c
+          tmp="$(mktemp -d)"
+          RENDERCHECK_CAPTURE_PATH="$tmp/frame.ppm" \
+          RENDERCHECK_METRICS_PATH="$tmp/metrics.txt" \
+            ./examples/basic-c/basic
+          test -s "$tmp/frame.ppm"
+          grep -q '^gpu_ms=2.250000000$' "$tmp/metrics.txt"
