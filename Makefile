@@ -78,6 +78,21 @@ test: $(PRODUCT)
 	  ! $(CURDIR)/$(PRODUCT) run >/dev/null 2>/dev/null; \
 	  printf '[project]\nname = "engine"\ncommand = "./renderer"\n\n[validation]\nvulkan = true\nfail_on_error = true\nfail_on_warning = true\n\n[performance]\nmax_gpu_ms = 4.0\n' > rendercheck.toml; \
 	  ! $(CURDIR)/$(PRODUCT) run >/dev/null 2>/dev/null
+	@if [ "$$(uname -s)" = "Linux" ]; then \
+	  tmp=$$(mktemp -d); \
+	  mkdir -p $$tmp/bin; \
+	  printf '%s\n' '#!/bin/sh' 'test "$$1" = "-a" && shift' 'export DISPLAY=:99' 'exec "$$@"' > $$tmp/bin/xvfb-run; \
+	  printf '%s\n' '#!/bin/sh' 'exit 0' > $$tmp/bin/Xvfb; \
+	  chmod +x $$tmp/bin/xvfb-run $$tmp/bin/Xvfb; \
+	  cd $$tmp; \
+	  printf '%s\n' '#!/bin/sh' 'test "$$LIBGL_ALWAYS_SOFTWARE" = "1"' 'test "$$RENDERCHECK_HEADLESS_BACKEND" = "xvfb"' 'printf "gpu_ms=999.000\n" >> "$$RENDERCHECK_METRICS_PATH"' > renderer; \
+	  chmod +x renderer; \
+	  printf '[project]\nname = "headless"\ncommand = "./renderer"\n\n[validation]\nvulkan = false\n\n[performance]\nmax_gpu_ms = 1.0\n' > rendercheck.toml; \
+	  DISPLAY= WAYLAND_DISPLAY= PATH="$$tmp/bin:$$PATH" $(CURDIR)/$(PRODUCT) run >/dev/null; \
+	  test -f .rendercheck/headless/software-renderer; \
+	  grep -q '"timing_kind": "software_render"' .rendercheck/results.json; \
+	  grep -q 'software max 999.00 ms' .rendercheck/report.md; \
+	fi
 	@tmp=$$(mktemp -d); \
 	  cd $$tmp; \
 	  printf '[project]\nname = "engine"\ncommand = "true"\n\n[[test]]\nname = "a/b"\n\n[[test]]\nname = "a?b"\n' > rendercheck.toml; \

@@ -58,6 +58,11 @@ bool parse_metric_value(std::string_view text, double& value) {
     return true;
 }
 
+bool software_renderer_active(std::string_view test_name) {
+    std::error_code ec;
+    return fs::is_regular_file(capture_output_dir(test_name) / "software-renderer", ec);
+}
+
 std::string markdown_escape(std::string value) {
     std::string out;
     out.reserve(value.size());
@@ -90,15 +95,18 @@ std::string build_markdown_report(const std::vector<TestReport>& reports,
     std::ostringstream out;
     out << "# RendererCheck report\n\n"
         << "**" << passed << " passed, " << failed << " failed**\n\n"
-        << "| Test | Status | Process | GPU | Validation | Visual |\n"
+        << "| Test | Status | Process | Timing | Validation | Visual |\n"
         << "|---|---:|---:|---:|---:|---:|\n";
 
     for (const auto& report : reports) {
+        const bool software = software_renderer_active(report.name);
         out << "| " << markdown_escape(report.name)
             << " | " << (report.passed ? "PASS" : "FAIL")
             << " | " << std::fixed << std::setprecision(2) << report.process_ms << " ms";
-        if (report.gpu_samples != 0) out << " | max " << report.gpu_max_ms << " ms (" << report.gpu_samples << ")";
-        else out << " | —";
+        if (report.gpu_samples != 0) {
+            out << " | " << (software ? "software max " : "GPU max ")
+                << report.gpu_max_ms << " ms (" << report.gpu_samples << ")";
+        } else out << " | —";
         if (!report.validation_checked) out << " | —";
         else if (report.validation_errors != 0 || report.validation_warnings != 0 || report.validation_vuids != 0) {
             out << " | " << report.validation_errors << "E/" << report.validation_warnings
@@ -203,7 +211,9 @@ PerformanceResult analyze_performance(std::string_view test_name,
         result.process_over_budget = true;
         result.passed = false;
     }
-    if (config.max_gpu_ms > 0.0) {
+
+    const bool software = software_renderer_active(test_name);
+    if (config.max_gpu_ms > 0.0 && !software) {
         if (result.gpu_samples == 0) {
             result.gpu_missing = true;
             result.passed = false;
@@ -228,9 +238,11 @@ void write_reports(const std::vector<TestReport>& reports, std::size_t passed, s
             out << "{\n  \"passed\": " << passed << ",\n  \"failed\": " << failed << ",\n  \"tests\": [\n";
             for (std::size_t i = 0; i < reports.size(); ++i) {
                 const auto& r = reports[i];
+                const bool software = software_renderer_active(r.name);
                 out << "    {\"name\": \"" << json_escape(r.name)
                     << "\", \"passed\": " << (r.passed ? "true" : "false")
                     << ", \"process_ms\": " << std::fixed << std::setprecision(3) << r.process_ms
+                    << ", \"timing_kind\": \"" << (software ? "software_render" : "gpu") << "\""
                     << ", \"gpu_samples\": " << r.gpu_samples
                     << ", \"gpu_average_ms\": " << r.gpu_average_ms
                     << ", \"gpu_max_ms\": " << r.gpu_max_ms

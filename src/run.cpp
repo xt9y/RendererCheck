@@ -7,8 +7,10 @@
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -23,17 +25,82 @@ namespace fs = std::filesystem;
 namespace rendercheck {
 namespace {
 
+struct RuntimeEnvironment {
+    bool display_present = false;
+    bool xvfb_available = false;
+    bool use_xvfb = false;
+    bool software_renderer = false;
+    bool auto_headless_disabled = false;
+};
+
 struct RunResult {
     int exit_code = 1;
     double milliseconds = 0.0;
 };
+
+bool env_has_value(const char* name) {
+    const char* value = std::getenv(name);
+    return value && *value;
+}
+
+bool env_truthy(const char* name) {
+    const char* value = std::getenv(name);
+    if (!value) return false;
+    const std::string_view v(value);
+    return v == "1" || v == "true" || v == "yes" || v == "on";
+}
+
+bool env_falsey(const char* name) {
+    const char* value = std::getenv(name);
+    if (!value) return false;
+    const std::string_view v(value);
+    return v == "0" || v == "false" || v == "no" || v == "off";
+}
+
+bool executable_in_path(const char* name) {
+    const char* raw_path = std::getenv("PATH");
+    if (!raw_path) return false;
+
+    std::stringstream stream(raw_path);
+    std::string dir;
+    while (std::getline(stream, dir, ':')) {
+        if (dir.empty()) dir = ".";
+        const fs::path candidate = fs::path(dir) / name;
+#if defined(__APPLE__) || defined(__linux__)
+        if (::access(candidate.c_str(), X_OK) == 0) return true;
+#else
+        if (fs::exists(candidate)) return true;
+#endif
+    }
+    return false;
+}
+
+RuntimeEnvironment detect_runtime_environment() {
+    RuntimeEnvironment runtime;
+    runtime.software_renderer = env_truthy("LIBGL_ALWAYS_SOFTWARE") ||
+                                env_truthy("RENDERCHECK_SOFTWARE_RENDERER");
+
+#if defined(__linux__)
+    runtime.display_present = env_has_value("DISPLAY") || env_has_value("WAYLAND_DISPLAY");
+    runtime.xvfb_available = executable_in_path("xvfb-run") && executable_in_path("Xvfb");
+    runtime.auto_headless_disabled = env_falsey("RENDERCHECK_HEADLESS_AUTO");
+
+    if (!runtime.display_present && !runtime.auto_headless_disabled && runtime.xvfb_available) {
+        runtime.use_xvfb = true;
+        runtime.software_renderer = true;
+    }
+#endif
+
+    return runtime;
+}
 
 RunResult run_process(const std::string& command,
                       const fs::path& cwd,
                       std::string_view test_name,
                       const fs::path& output_dir,
                       bool capture_enabled,
-                      const ValidationConfig& validation) {
+                      const ValidationConfig& validation,
+                      const RuntimeEnvironment& runtime) {
     RunResult result;
     const auto started = std::chrono::steady_clock::now();
 
@@ -52,6 +119,15 @@ RunResult run_process(const std::string& command,
         ::setenv("RENDERCHECK_TEST", test.c_str(), 1);
         ::setenv("RENDERCHECK_OUTPUT_DIR", output.c_str(), 1);
 
+        if (runtime.use_xvfb) {
+            ::setenv("RENDERCHECK_HEADLESS", "1", 1);
+            ::setenv("RENDERCHECK_HEADLESS_BACKEND", "xvfb", 1);
+            ::setenv("RENDERCHECK_SOFTWARE_RENDERER", "1", 1);
+            ::setenv("LIBGL_ALWAYS_SOFTWARE", "1", 1);
+        } else if (runtime.software_renderer) {
+            ::setenv("RENDERCHECK_SOFTWARE_RENDERER", "1", 1);
+        }
+
         if (capture_enabled) {
             const std::string capture = fs::absolute(rendercheck::capture_path(test_name)).string();
             ::setenv("RENDERCHECK_CAPTURE_PATH", capture.c_str(), 1);
@@ -67,6 +143,14 @@ RunResult run_process(const std::string& command,
             std::perror("rendercheck: chdir");
             _exit(126);
         }
+
+#if defined(__linux__)
+        if (runtime.use_xvfb) {
+            execlp("xvfb-run", "xvfb-run", "-a", "/bin/sh", "-c", command.c_str(), static_cast<char*>(nullptr));
+            std::perror("rendercheck: xvfb-run");
+            _exit(127);
+        }
+#endif
 
         execl("/bin/sh", "sh", "-c", command.c_str(), static_cast<char*>(nullptr));
         std::perror("rendercheck: exec");
@@ -91,6 +175,7 @@ RunResult run_process(const std::string& command,
     (void)output_dir;
     (void)capture_enabled;
     (void)validation;
+    (void)runtime;
     std::cerr << "  [fail] process execution is unsupported on this platform\n";
 #endif
 
@@ -146,7 +231,21 @@ int run_tests(std::string_view filter) {
         return 2;
     }
 
+    const RuntimeEnvironment runtime = detect_runtime_environment();
+
     std::cout << "RendererCheck run\n\n";
+#if defined(__linux__)
+    if (runtime.use_xvfb) {
+        std::cout << "headless: automatic Xvfb + Mesa software renderer\n\n";
+    } else if (!runtime.display_present && runtime.auto_headless_disabled) {
+        std::cout << "headless: automatic fallback disabled by RENDERCHECK_HEADLESS_AUTO\n\n";
+    } else if (!runtime.display_present && !runtime.xvfb_available) {
+        std::cout << "headless: no display and Xvfb tooling not found; running command directly\n\n";
+    } else if (runtime.software_renderer) {
+        std::cout << "renderer: software mode detected\n\n";
+    }
+#endif
+
     std::size_t passed = 0;
     std::size_t failed = 0;
     std::vector<TestReport> reports;
@@ -172,6 +271,12 @@ int run_tests(std::string_view filter) {
         fs::remove(metrics_path(selected_test.name), ec);
         ec.clear();
         fs::remove(validation_path(selected_test.name), ec);
+        ec.clear();
+        fs::remove(output_dir / "software-renderer", ec);
+        if (runtime.software_renderer) {
+            std::ofstream marker(output_dir / "software-renderer");
+            if (marker) marker << (runtime.use_xvfb ? "xvfb\n" : "environment\n");
+        }
         if (visual.capture) {
             ec.clear();
             fs::remove(capture_path(selected_test.name), ec);
@@ -183,7 +288,7 @@ int run_tests(std::string_view filter) {
         const fs::path cwd = working_directory(config, selected_test.test);
         std::cout << selected_test.name << '\n' << "  command: " << command << '\n';
 
-        const RunResult run = run_process(command, cwd, selected_test.name, output_dir, visual.capture, config.validation);
+        const RunResult run = run_process(command, cwd, selected_test.name, output_dir, visual.capture, config.validation, runtime);
         report.process_ms = run.milliseconds;
         if (run.exit_code == 0) {
             std::cout << "  [ok] process (" << static_cast<long long>(run.milliseconds) << " ms)\n";
@@ -221,9 +326,17 @@ int run_tests(std::string_view filter) {
                       << "  process budget: " << run.milliseconds << " / " << performance.max_process_ms << " ms\n";
         }
         if (perf.gpu_samples != 0) {
-            std::cout << std::fixed << std::setprecision(3)
-                      << "  gpu: avg " << perf.gpu_average_ms << " ms, max " << perf.gpu_max_ms
-                      << " ms (" << perf.gpu_samples << " samples)\n";
+            std::cout << std::fixed << std::setprecision(3);
+            if (runtime.software_renderer) {
+                std::cout << "  render (software): avg " << perf.gpu_average_ms << " ms, max " << perf.gpu_max_ms
+                          << " ms (" << perf.gpu_samples << " samples)\n";
+            } else {
+                std::cout << "  gpu: avg " << perf.gpu_average_ms << " ms, max " << perf.gpu_max_ms
+                          << " ms (" << perf.gpu_samples << " samples)\n";
+            }
+        }
+        if (runtime.software_renderer && performance.max_gpu_ms > 0.0) {
+            std::cout << "  [info] GPU budget skipped because this run uses a software renderer\n";
         }
         if (perf.gpu_missing) {
             std::cout << "  [fail] GPU timing required but renderer reported no gpu_ms samples\n";

@@ -1,4 +1,5 @@
 #include "rendercheck/doctor.h"
+#include "rendercheck/config.h"
 #include "rendercheck/vulkan_min.h"
 
 #include <algorithm>
@@ -61,6 +62,18 @@ std::string platform_string() {
     }
 #endif
     return "unknown";
+}
+
+bool env_has_value(const char* name) {
+    const char* value = std::getenv(name);
+    return value && *value;
+}
+
+bool env_truthy(const char* name) {
+    const char* value = std::getenv(name);
+    if (!value) return false;
+    const std::string_view v(value);
+    return v == "1" || v == "true" || v == "yes" || v == "on";
 }
 
 bool executable_in_path(const char* name) {
@@ -164,6 +177,43 @@ int run_doctor(bool verbose) {
     warn("target", "unsupported platform");
 #endif
 
+#if defined(__linux__)
+    const bool display_present = env_has_value("DISPLAY") || env_has_value("WAYLAND_DISPLAY");
+    const bool xvfb_run = executable_in_path("xvfb-run");
+    const bool xvfb_server = executable_in_path("Xvfb");
+    const bool xvfb_ready = xvfb_run && xvfb_server;
+
+    if (display_present) {
+        if (env_has_value("WAYLAND_DISPLAY")) ok("display", std::string("Wayland ") + std::getenv("WAYLAND_DISPLAY"));
+        else ok("display", std::string("X11 ") + std::getenv("DISPLAY"));
+    } else if (xvfb_ready) {
+        ok("headless display", "no DISPLAY/WAYLAND_DISPLAY; Xvfb fallback available automatically");
+    } else if (xvfb_run || xvfb_server) {
+        warn("headless display", "incomplete Xvfb installation; both xvfb-run and Xvfb are required");
+    } else {
+        warn("headless display", "no display and Xvfb tooling not found");
+    }
+
+    if (env_truthy("LIBGL_ALWAYS_SOFTWARE")) {
+        ok("renderer mode", "software renderer forced by LIBGL_ALWAYS_SOFTWARE");
+    } else if (!display_present && xvfb_ready) {
+        ok("renderer mode", "RendererCheck will use Mesa software rendering with Xvfb");
+    }
+#endif
+
+    bool vulkan_required = true;
+    if (fs::is_regular_file("rendercheck.toml")) {
+        Config config;
+        std::string config_error;
+        if (load_config("rendercheck.toml", config, config_error)) {
+            vulkan_required = config.validation.vulkan;
+            if (vulkan_required) ok("Vulkan validation", "enabled by rendercheck.toml");
+            else ok("Vulkan validation", "disabled by rendercheck.toml");
+        } else {
+            warn("config", config_error);
+        }
+    }
+
     if (executable_in_path("vulkaninfo")) {
         ok("vulkaninfo", "found in PATH");
     } else {
@@ -176,9 +226,14 @@ int run_doctor(bool verbose) {
 
     SharedLibrary vulkan = load_vulkan();
     if (!vulkan.handle) {
-        fail("Vulkan loader", "could not load Vulkan or MoltenVK");
-        std::cout << "\nEnvironment is not ready for Vulkan tests.\n";
-        return 1;
+        if (vulkan_required) {
+            fail("Vulkan loader", "could not load Vulkan or MoltenVK");
+            std::cout << "\nEnvironment is not ready for configured Vulkan tests.\n";
+            return 1;
+        }
+        warn("Vulkan loader", "not found (Vulkan validation is disabled in rendercheck.toml)");
+        std::cout << "\nEnvironment is ready for configured non-Vulkan RendererCheck runs.\n";
+        return 0;
     }
 
     ok("Vulkan loader", vulkan.path);
@@ -186,8 +241,12 @@ int run_doctor(bool verbose) {
     auto get_proc = reinterpret_cast<vkmin::PFN_vkGetInstanceProcAddr>(
         load_symbol(vulkan.handle, "vkGetInstanceProcAddr"));
     if (!get_proc) {
-        fail("vkGetInstanceProcAddr", "symbol missing from loader");
-        return 1;
+        if (vulkan_required) {
+            fail("vkGetInstanceProcAddr", "symbol missing from loader");
+            return 1;
+        }
+        warn("vkGetInstanceProcAddr", "symbol missing from optional loader");
+        return 0;
     }
     ok("vkGetInstanceProcAddr");
 
@@ -225,8 +284,10 @@ int run_doctor(bool verbose) {
 
     if (validation_found) {
         ok("validation layers", "VK_LAYER_KHRONOS_validation");
-    } else {
+    } else if (vulkan_required) {
         warn("validation layers", "VK_LAYER_KHRONOS_validation not found");
+    } else {
+        warn("validation layers", "VK_LAYER_KHRONOS_validation not found (not required by current config)");
     }
 
     if (enum_exts) {
@@ -244,7 +305,11 @@ int run_doctor(bool verbose) {
         }
     }
 
-    std::cout << "\nEnvironment usable for RendererCheck's Vulkan bootstrap.\n";
+    if (vulkan_required) {
+        std::cout << "\nEnvironment usable for RendererCheck's configured Vulkan bootstrap.\n";
+    } else {
+        std::cout << "\nEnvironment ready for configured RendererCheck runs; Vulkan diagnostics are optional.\n";
+    }
     return 0;
 }
 
