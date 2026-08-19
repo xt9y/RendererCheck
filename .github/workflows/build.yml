@@ -36,7 +36,7 @@ jobs:
         run: make test
 
   linux-graphics:
-    timeout-minutes: 20
+    timeout-minutes: 25
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -45,7 +45,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             build-essential cmake pkg-config git xvfb \
-            libgl1-mesa-dev mesa-utils xorg-dev \
+            libgl1-mesa-dev mesa-utils xorg-dev libglfw3-dev \
             libvulkan-dev libvulkan1 mesa-vulkan-drivers vulkan-tools vulkan-validationlayers
       - name: Build and install RendererCheck
         run: |
@@ -65,6 +65,19 @@ jobs:
             exit 1
           fi
           test -s .rendercheck/gradient/diff.png
+      - name: Raw GLFW OpenGL framebuffer capture
+        working-directory: examples/glfw-opengl
+        run: |
+          make
+          rm -rf baselines .rendercheck
+          if renderercheck run opengl-frame; then
+            echo 'Expected the first OpenGL run to fail without a baseline'
+            exit 1
+          fi
+          test -s .rendercheck/opengl-frame/actual.png
+          renderercheck approve opengl-frame
+          renderercheck run opengl-frame
+          grep -q '"renderer_mode": "software"' .rendercheck/results.json
       - name: Build raylib
         run: |
           git clone --depth 1 --branch 5.0 https://github.com/raysan5/raylib.git /tmp/raylib
@@ -84,6 +97,25 @@ jobs:
           test -s .rendercheck/raylib-frame/actual.png
           renderercheck approve raylib-frame
           renderercheck run raylib-frame
+      - name: Build SDL3
+        run: |
+          git clone --depth 1 https://github.com/libsdl-org/SDL.git /tmp/SDL
+          cmake -S /tmp/SDL -B /tmp/sdl3-build -DSDL_TESTS=OFF -DSDL_TEST_LIBRARY=OFF
+          cmake --build /tmp/sdl3-build --parallel 2
+          sudo cmake --install /tmp/sdl3-build
+          sudo ldconfig
+      - name: Real SDL3 renderer capture
+        working-directory: examples/sdl3
+        run: |
+          make
+          rm -rf baselines .rendercheck
+          if renderercheck run sdl3-frame; then
+            echo 'Expected the first SDL3 run to fail without a baseline'
+            exit 1
+          fi
+          test -s .rendercheck/sdl3-frame/actual.png
+          renderercheck approve sdl3-frame
+          renderercheck run sdl3-frame
       - name: Real Vulkan validation pass/fail
         working-directory: examples/vulkan-validation
         run: |
@@ -102,6 +134,37 @@ jobs:
           name: renderercheck-linux-graphics
           path: |
             examples/basic-c/.rendercheck/
+            examples/glfw-opengl/.rendercheck/
             examples/raylib/.rendercheck/
+            examples/sdl3/.rendercheck/
             examples/vulkan-validation/.rendercheck/
+          if-no-files-found: ignore
+
+  macos-metal:
+    timeout-minutes: 15
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and install RendererCheck
+        run: |
+          make CXXFLAGS='-std=c++20 -O2 -Wall -Wextra -Wpedantic -Werror'
+          sudo make install
+      - name: Offscreen Metal capture
+        working-directory: examples/metal
+        run: |
+          make
+          rm -rf baselines .rendercheck
+          if renderercheck run metal-frame; then
+            echo 'Expected the first Metal run to fail without a baseline'
+            exit 1
+          fi
+          test -s .rendercheck/metal-frame/actual.png
+          renderercheck approve metal-frame
+          renderercheck run metal-frame
+      - name: Upload Metal artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: renderercheck-metal
+          path: examples/metal/.rendercheck/
           if-no-files-found: ignore

@@ -1,0 +1,18 @@
+[project]
+name = "metal"
+command = "./metal-renderercheck"
+cwd = "."
+baseline_dir = "baselines"
+headless = "none"
+renderer = "hardware"
+timeout_ms = 10000.0
+
+[validation]
+vulkan = false
+
+[[test]]
+name = "metal-frame"
+capture = true
+warmup_frames = 1
+pixel_threshold = 0
+max_changed_percent = 0.0

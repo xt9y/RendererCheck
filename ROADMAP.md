@@ -10,12 +10,16 @@
 - [x] PNG actual/baseline/diff diagnostics.
 - [x] Versioned JSON results schema and per-test logs.
 - [x] Committed-baseline regression fixture.
+- [x] Raw GLFW/OpenGL integration fixture.
 - [x] Real raylib capture integration in CI.
+- [x] SDL3 renderer integration fixture.
 - [x] Real Vulkan validation integration in CI.
+- [x] macOS Metal offscreen integration fixture.
 - [x] Sanitizer and warnings-as-errors CI coverage.
 
 ## Next
 
-- Test more real OpenGL/Vulkan/SDL3/Metal projects.
-- Add more headless/offscreen edge-case fixtures as real failures are found.
+- Keep testing BGE and other real projects.
+- Add real offscreen/EGL and Wayland-specific cases when they expose distinct failures.
+- Add more headless edge-case fixtures as real failures are found.
 - Keep improving reports from real regression cases rather than adding profiler features.
