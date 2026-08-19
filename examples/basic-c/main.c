@@ -5,8 +5,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define WIDTH 64
-#define HEIGHT 64
+#define WIDTH 8
+#define HEIGHT 8
 
 int main(void) {
     static uint8_t pixels[WIDTH * HEIGHT * 3];
