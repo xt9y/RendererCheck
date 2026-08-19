@@ -37,6 +37,20 @@ done
 tmp=$(mktemp -d)
 (
   cd "$tmp"
+  printf '[project]\nname="fresh"\ncommand="true"\nheadless="none"\n' > rendercheck.toml
+  RENDERCHECK_HEADLESS_AUTO=0 "$BIN" run >/dev/null
+  test -s .rendercheck/report.md
+  test -s .rendercheck/results.json
+  printf '[project]\nname="broken"\ncommand="true"\nunknown=true\n' > rendercheck.toml
+  if RENDERCHECK_HEADLESS_AUTO=0 "$BIN" run >/dev/null 2>&1; then exit 1; fi
+  test ! -e .rendercheck/report.md
+  test ! -e .rendercheck/results.json
+)
+rm -rf "$tmp"
+
+tmp=$(mktemp -d)
+(
+  cd "$tmp"
   cat > renderer <<'SH'
 #!/bin/sh
 trap '' TERM
@@ -47,6 +61,31 @@ SH
   if "$BIN" run >/dev/null 2>&1; then exit 1; fi
   grep -q '"timed_out": true' .rendercheck/results.json
   grep -q '"exit_code": 124' .rendercheck/results.json
+)
+rm -rf "$tmp"
+
+tmp=$(mktemp -d)
+(
+  cd "$tmp"
+  cat > renderer <<'SH'
+#!/bin/sh
+(
+  trap '' TERM
+  sleep 30
+) &
+echo $! > child.pid
+trap 'exit 0' TERM
+wait
+SH
+  chmod +x renderer
+  printf '[project]\nname="timeout-tree"\ncommand="./renderer"\ntimeout_ms=100\n' > rendercheck.toml
+  if "$BIN" run >/dev/null 2>&1; then exit 1; fi
+  child_pid=$(cat child.pid)
+  sleep 1
+  if kill -0 "$child_pid" 2>/dev/null; then
+    echo "timeout left descendant $child_pid running" >&2
+    exit 1
+  fi
 )
 rm -rf "$tmp"
 
@@ -149,6 +188,13 @@ SH
     DISPLAY= WAYLAND_DISPLAY= PATH="$tmp/bin:$PATH" "$BIN" run >/dev/null
     grep -q '"renderer_mode": "software"' .rendercheck/results.json
     grep -q '"timing_kind": "software_render"' .rendercheck/results.json
+
+    printf '[project]\nname="hardware"\ncommand="true"\nrenderer="hardware"\nheadless="auto"\n' > rendercheck.toml
+    if DISPLAY= WAYLAND_DISPLAY= LIBGL_ALWAYS_SOFTWARE= RENDERCHECK_SOFTWARE_RENDERER= PATH="$tmp/bin:$PATH" "$BIN" run >/dev/null 2>&1; then
+      echo 'hardware mode unexpectedly downgraded to Xvfb software rendering' >&2
+      exit 1
+    fi
+    grep -q 'hardware renderer requested but Xvfb fallback uses Mesa software rendering' .rendercheck/report.md
   )
   rm -rf "$tmp"
 fi
