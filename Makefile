@@ -28,6 +28,7 @@ $(PRODUCT): $(SOURCES) $(HEADERS)
 
 test: $(PRODUCT)
 	BIN="$(abspath $(PRODUCT))" ROOT="$(CURDIR)" CC="$(CC)" ./tests/smoke.sh
+	BIN="$(abspath $(PRODUCT))" ./tests/stale-report.sh
 	@tmp=$$(mktemp -d); \
 	  $(MAKE) install DESTDIR=$$tmp >/dev/null; \
 	  test -x "$$tmp$(BINDIR)/renderercheck"; \

@@ -25,6 +25,15 @@ void print_help() {
         "  renderercheck help                show this help\n";
 }
 
+void clear_run_reports() {
+    std::error_code ec;
+    fs::create_directories(".rendercheck", ec);
+    ec.clear();
+    fs::remove(".rendercheck/report.md", ec);
+    ec.clear();
+    fs::remove(".rendercheck/results.json", ec);
+}
+
 int init_project() {
     const fs::path config = "rendercheck.toml";
     if (fs::exists(config)) { std::cerr << "rendercheck.toml already exists\n"; return 1; }
@@ -81,7 +90,10 @@ int main(int argc, char** argv) {
     }
     if (argc > 3) { std::cerr << "renderercheck: too many arguments\n"; return 2; }
     const std::string_view filter = argc == 3 ? std::string_view(argv[2]) : std::string_view{};
-    if (command == "run") return rendercheck::run_tests(filter);
+    if (command == "run") {
+        clear_run_reports();
+        return rendercheck::run_tests(filter);
+    }
     if (command == "diff") return rendercheck::diff_captures(filter);
     if (command == "approve") return rendercheck::approve_captures(filter);
     std::cerr << "unknown command: " << command << "\n\n";
