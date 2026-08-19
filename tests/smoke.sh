@@ -12,6 +12,12 @@ CC=${CC:-cc}
 printf '%s\n' '#include <rendercheck/capture.h>' '#include <rendercheck/metrics.h>' 'int main(void) { return 0; }' |
   "$CC" -I"$ROOT/include" -std=c11 -Wall -Wextra -Wpedantic -x c - -fsyntax-only
 
+frame_helper=$(mktemp)
+printf '%s\n' '#include <rendercheck/capture.h>' '#include <stdint.h>' 'int main(void) { return rendercheck_frame_is_last(UINT64_MAX) ? 0 : 1; }' |
+  "$CC" -I"$ROOT/include" -std=c11 -Wall -Wextra -Wpedantic -x c - -o "$frame_helper"
+RENDERCHECK_FRAME_LIMIT=18446744073709551615 "$frame_helper"
+rm -f "$frame_helper"
+
 tmp=$(mktemp -d)
 (
   cd "$tmp"
