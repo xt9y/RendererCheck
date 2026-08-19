@@ -47,10 +47,12 @@ struct RunResult {
     double milliseconds = 0.0;
 };
 
+#if defined(__linux__)
 bool env_has_value(const char* name) {
     const char* value = std::getenv(name);
     return value && *value;
 }
+#endif
 
 bool env_truthy(const char* name) {
     const char* value = std::getenv(name);
@@ -66,6 +68,7 @@ bool env_falsey(const char* name) {
     return v == "0" || v == "false" || v == "no" || v == "off";
 }
 
+#if defined(__linux__)
 bool executable_in_path(const char* name) {
     const char* raw_path = std::getenv("PATH");
     if (!raw_path) return false;
@@ -74,14 +77,11 @@ bool executable_in_path(const char* name) {
     while (std::getline(stream, dir, ':')) {
         if (dir.empty()) dir = ".";
         const fs::path candidate = fs::path(dir) / name;
-#if defined(__APPLE__) || defined(__linux__)
         if (::access(candidate.c_str(), X_OK) == 0) return true;
-#else
-        if (fs::exists(candidate)) return true;
-#endif
     }
     return false;
 }
+#endif
 
 HeadlessMode resolved_headless_mode(const Config& config) {
     const char* env = std::getenv("RENDERCHECK_HEADLESS_MODE");
