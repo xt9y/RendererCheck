@@ -48,10 +48,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential cmake pkg-config git xvfb \
             libgl1-mesa-dev libegl1-mesa-dev libgles2-mesa-dev libglfw3-dev \
             libx11-dev libxrandr-dev libxi-dev libxcursor-dev libxinerama-dev libxext-dev libxfixes-dev libasound2-dev \
-            libvulkan-dev libvulkan1 mesa-vulkan-drivers vulkan-tools vulkan-validationlayers
+            libvulkan-dev mesa-vulkan-drivers vulkan-tools vulkan-validationlayers
       - name: Build and install RendererCheck
         run: |
           make CXXFLAGS='-std=c++20 -O2 -Wall -Wextra -Wpedantic -Werror'
@@ -159,6 +158,7 @@ jobs:
             examples/sdl3/.rendercheck/
             examples/vulkan-validation/.rendercheck/
           if-no-files-found: ignore
+          include-hidden-files: true
 
   macos-metal:
     timeout-minutes: 15
@@ -188,3 +188,4 @@ jobs:
           name: renderercheck-metal
           path: examples/metal/.rendercheck/
           if-no-files-found: ignore
+          include-hidden-files: true
