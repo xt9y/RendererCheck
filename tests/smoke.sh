@@ -78,7 +78,7 @@ trap 'exit 0' TERM
 wait
 SH
   chmod +x renderer
-  printf '[project]\nname="timeout-tree"\ncommand="./renderer"\ntimeout_ms=100\n' > rendercheck.toml
+  printf '[project]\nname="timeout-tree"\ncommand="./renderer"\ntimeout_ms=1000\n' > rendercheck.toml
   if "$BIN" run >/dev/null 2>&1; then exit 1; fi
   child_pid=$(cat child.pid)
   sleep 1
