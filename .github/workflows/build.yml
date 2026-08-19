@@ -43,9 +43,10 @@ jobs:
       - name: Install graphics dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get install -y --no-install-recommends \
             build-essential cmake pkg-config git xvfb \
-            libgl1-mesa-dev libegl1-mesa-dev libgles2-mesa-dev mesa-utils xorg-dev libglfw3-dev \
+            libgl1-mesa-dev libegl1-mesa-dev libgles2-mesa-dev libglfw3-dev \
+            libx11-dev libxrandr-dev libxi-dev libxcursor-dev libxinerama-dev libxext-dev libxfixes-dev libasound2-dev \
             libvulkan-dev libvulkan1 mesa-vulkan-drivers vulkan-tools vulkan-validationlayers
       - name: Build and install RendererCheck
         run: |
