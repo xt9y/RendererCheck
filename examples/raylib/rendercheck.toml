@@ -1,8 +1,11 @@
 [project]
 name = "raylib"
-command = "./raylib-rendercheck"
+command = "./raylib-renderercheck"
 cwd = "."
 baseline_dir = "baselines"
+headless = "auto"
+renderer = "auto"
+timeout_ms = 10000.0
 
 [validation]
 vulkan = false
@@ -12,5 +15,6 @@ fail_on_warning = false
 [[test]]
 name = "raylib-frame"
 capture = true
+warmup_frames = 2
 pixel_threshold = 1
 max_changed_percent = 0.01

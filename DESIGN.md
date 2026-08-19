@@ -1,10 +1,11 @@
 # Notes
 
 - Test the rendered result, not just the build.
-- Keep setup small.
-- Keep failures readable in a terminal.
-- Do not pretend CPU frame time is GPU time.
-- Do not try to be a GPU profiler.
-- Do not try to be a game engine.
-- Test changes on real renderers.
-- BGE is one of my real test projects.
+- A pass must never hide a missing check.
+- Keep setup small and failures readable in a terminal.
+- Keep every run's artifacts fresh and inspectable.
+- Treat process timeout and process performance as different things.
+- Do not pretend CPU or software-renderer timing is hardware GPU time.
+- Do not try to be a GPU profiler or a game engine.
+- Prefer deterministic capture points over huge visual tolerances.
+- Test changes on real renderers. BGE is one of the integration projects.

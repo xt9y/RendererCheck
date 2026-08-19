@@ -1,28 +1,107 @@
-name: Build
+name: Build and integration
 
 on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   build:
+    timeout-minutes: 15
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - name: Build
-        run: make
+      - name: Build with warnings as errors
+        run: make CXXFLAGS='-std=c++20 -O2 -Wall -Wextra -Wpedantic -Werror'
       - name: Smoke tests
         run: make test
-      - name: Basic C example
-        shell: bash
+
+  sanitizers:
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: ASan + UBSan build
         run: |
-          make -C examples/basic-c
-          tmp="$(mktemp -d)"
-          RENDERCHECK_CAPTURE_PATH="$tmp/frame.ppm" \
-          RENDERCHECK_METRICS_PATH="$tmp/metrics.txt" \
-            ./examples/basic-c/basic
-          test -s "$tmp/frame.ppm"
-          grep -q '^gpu_ms=2.250000000$' "$tmp/metrics.txt"
+          make CXXFLAGS='-std=c++20 -O0 -g -Wall -Wextra -Wpedantic -Werror -fsanitize=address,undefined -fno-omit-frame-pointer' \
+               LDFLAGS='-fsanitize=address,undefined'
+      - name: ASan + UBSan smoke tests
+        env:
+          ASAN_OPTIONS: detect_leaks=1
+        run: make test
+
+  linux-graphics:
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install graphics dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential cmake pkg-config git xvfb \
+            libgl1-mesa-dev mesa-utils xorg-dev \
+            libvulkan-dev libvulkan1 mesa-vulkan-drivers vulkan-tools vulkan-validationlayers
+      - name: Build and install RendererCheck
+        run: |
+          make CXXFLAGS='-std=c++20 -O2 -Wall -Wextra -Wpedantic -Werror'
+          sudo make install
+          renderercheck version
+      - name: Committed baseline regression fixture
+        working-directory: examples/basic-c
+        run: |
+          make
+          renderercheck run gradient
+          test -s .rendercheck/gradient/actual.png
+          grep -q '"schema_version": 1' .rendercheck/results.json
+          grep -q '"name":"draw_calls"' .rendercheck/results.json
+          if RENDERCHECK_EXAMPLE_MUTATE=1 renderercheck run gradient; then
+            echo 'RendererCheck unexpectedly accepted a changed committed baseline'
+            exit 1
+          fi
+          test -s .rendercheck/gradient/diff.png
+      - name: Build raylib
+        run: |
+          git clone --depth 1 --branch 5.0 https://github.com/raysan5/raylib.git /tmp/raylib
+          cmake -S /tmp/raylib -B /tmp/raylib-build -DBUILD_EXAMPLES=OFF -DBUILD_SHARED_LIBS=ON
+          cmake --build /tmp/raylib-build --parallel 2
+          sudo cmake --install /tmp/raylib-build
+          sudo ldconfig
+      - name: Real raylib framebuffer capture
+        working-directory: examples/raylib
+        run: |
+          make
+          rm -rf baselines .rendercheck
+          if renderercheck run raylib-frame; then
+            echo 'Expected the first raylib run to fail without a baseline'
+            exit 1
+          fi
+          test -s .rendercheck/raylib-frame/actual.png
+          renderercheck approve raylib-frame
+          renderercheck run raylib-frame
+      - name: Real Vulkan validation pass/fail
+        working-directory: examples/vulkan-validation
+        run: |
+          make
+          renderercheck doctor --verbose
+          renderercheck run clean
+          if RENDERCHECK_VK_INVALID=1 renderercheck run clean; then
+            echo 'RendererCheck unexpectedly accepted an intentional Vulkan VUID'
+            exit 1
+          fi
+          grep -q 'VUID-' .rendercheck/clean/validation.log
+      - name: Upload RendererCheck artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: renderercheck-linux-graphics
+          path: |
+            examples/basic-c/.rendercheck/
+            examples/raylib/.rendercheck/
+            examples/vulkan-validation/.rendercheck/
+          if-no-files-found: ignore

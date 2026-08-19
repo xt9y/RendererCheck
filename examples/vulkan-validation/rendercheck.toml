@@ -1,0 +1,15 @@
+[project]
+name = "vulkan-validation"
+command = "./vulkan-validation"
+cwd = "."
+headless = "none"
+renderer = "software"
+timeout_ms = 10000.0
+
+[validation]
+vulkan = true
+fail_on_error = true
+fail_on_warning = false
+
+[[test]]
+name = "clean"

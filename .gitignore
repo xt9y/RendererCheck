@@ -1,6 +1,4 @@
 build/
 .DS_Store
 rendercheck.toml
-*.actual.png
-*.diff.png
 .rendercheck/

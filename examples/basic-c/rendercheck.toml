@@ -3,6 +3,12 @@ name = "basic-c"
 command = "./basic"
 cwd = "."
 baseline_dir = "baselines"
+headless = "none"
+renderer = "hardware"
+timeout_ms = 1000.0
+capture = true
+pixel_threshold = 0
+max_changed_percent = 0.0
 
 [validation]
 vulkan = false
@@ -15,6 +21,3 @@ max_process_ms = 250.0
 
 [[test]]
 name = "gradient"
-capture = true
-pixel_threshold = 0
-max_changed_percent = 0.0

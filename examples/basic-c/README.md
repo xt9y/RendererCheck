@@ -1,19 +1,10 @@
-# basic C example
+# basic-c
 
-This example is a minimal project showing both RendererCheck integration helpers:
-
-- `rendercheck_capture_rgb8()` for deterministic framebuffer capture
-- `rendercheck_gpu_ms()` for GPU timing samples
-
-Build and establish a baseline:
+Dependency-free deterministic capture fixture. It is the repository's committed-baseline regression test.
 
 ```bash
 make
-rendercheck run
-rendercheck approve gradient
-rendercheck run
+renderercheck run gradient
 ```
 
-The first run is expected to fail because `baselines/gradient.ppm` does not exist yet. Review `.rendercheck/gradient/actual.ppm`, approve it, then future runs compare against that committed baseline.
-
-The example's `max_gpu_ms = 4.0` budget passes because `main.c` submits a 2.25 ms sample. In a real renderer, replace that sample with a value measured by GPU timestamp queries.
+`RENDERCHECK_EXAMPLE_MUTATE=1 renderercheck run gradient` intentionally changes one pixel and must fail.

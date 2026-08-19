@@ -24,11 +24,13 @@ struct ImageDiff {
 
 bool load_ppm(const std::filesystem::path& path, Image& image, std::string& error);
 bool save_ppm(const std::filesystem::path& path, const Image& image, std::string& error);
+bool save_png(const std::filesystem::path& path, const Image& image, std::string& error);
 bool compare_images(const Image& baseline,
                     const Image& actual,
                     std::uint8_t pixel_threshold,
                     ImageDiff& result,
                     Image& diff,
                     std::string& error);
+Image side_by_side(const Image& left, const Image& right);
 
 } // namespace rendercheck

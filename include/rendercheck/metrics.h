@@ -2,6 +2,7 @@
 #define RENDERCHECK_METRICS_H
 
 #include <ctype.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -25,7 +26,7 @@ static inline int rendercheck_metric_name_valid(const char* name) {
 static inline int rendercheck_metric(const char* name, double value) {
     const char* path = rendercheck_metrics_path();
     if (!path) return 0;
-    if (!rendercheck_metric_name_valid(name)) return -1;
+    if (!rendercheck_metric_name_valid(name) || !isfinite(value) || value < 0.0) return -1;
 
     FILE* file = fopen(path, "a");
     if (!file) return -1;

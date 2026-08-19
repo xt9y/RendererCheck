@@ -1,18 +1,9 @@
 CC ?= cc
-TARGET = basic
-CPPFLAGS += -I../../include
 CFLAGS ?= -std=c11 -O2 -Wall -Wextra -Wpedantic
-
-all: $(TARGET)
-
-$(TARGET): main.c
+CPPFLAGS += -I../../include
+all: basic
+basic: main.c ../../include/rendercheck/capture.h ../../include/rendercheck/metrics.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) main.c -o $@
-
-run: $(TARGET)
-	rendercheck run
-
 clean:
-	rm -f $(TARGET)
-	rm -rf .rendercheck baselines
-
-.PHONY: all run clean
+	rm -f basic
+.PHONY: all clean
