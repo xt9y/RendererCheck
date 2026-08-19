@@ -51,8 +51,6 @@ static int capture_frame(uint64_t frame)
 
 int main(void)
 {
-    if (!getenv("EGL_PLATFORM")) setenv("EGL_PLATFORM", "surfaceless", 1);
-
     EGLDisplay display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
     EGLSurface surface = EGL_NO_SURFACE;
     EGLContext context = EGL_NO_CONTEXT;
