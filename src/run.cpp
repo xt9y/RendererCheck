@@ -47,10 +47,12 @@ struct RunResult {
     double milliseconds = 0.0;
 };
 
+#if defined(__linux__)
 bool env_has_value(const char* name) {
     const char* value = std::getenv(name);
     return value && *value;
 }
+#endif
 
 bool env_truthy(const char* name) {
     const char* value = std::getenv(name);
@@ -66,6 +68,7 @@ bool env_falsey(const char* name) {
     return v == "0" || v == "false" || v == "no" || v == "off";
 }
 
+#if defined(__linux__)
 bool executable_in_path(const char* name) {
     const char* raw_path = std::getenv("PATH");
     if (!raw_path) return false;
@@ -74,14 +77,11 @@ bool executable_in_path(const char* name) {
     while (std::getline(stream, dir, ':')) {
         if (dir.empty()) dir = ".";
         const fs::path candidate = fs::path(dir) / name;
-#if defined(__APPLE__) || defined(__linux__)
         if (::access(candidate.c_str(), X_OK) == 0) return true;
-#else
-        if (fs::exists(candidate)) return true;
-#endif
     }
     return false;
 }
+#endif
 
 HeadlessMode resolved_headless_mode(const Config& config) {
     const char* env = std::getenv("RENDERCHECK_HEADLESS_MODE");
@@ -110,8 +110,15 @@ RuntimeEnvironment detect_runtime_environment(const Config& config) {
     RuntimeEnvironment runtime;
     const HeadlessMode headless = resolved_headless_mode(config);
     const RendererMode renderer = resolved_renderer_mode(config);
-    runtime.software_renderer = renderer == RendererMode::Software || env_truthy("LIBGL_ALWAYS_SOFTWARE") ||
-                                env_truthy("RENDERCHECK_SOFTWARE_RENDERER");
+    const bool software_forced = env_truthy("LIBGL_ALWAYS_SOFTWARE") || env_truthy("RENDERCHECK_SOFTWARE_RENDERER");
+
+    if (renderer == RendererMode::Hardware && software_forced) {
+        runtime.renderer_mode = "hardware";
+        runtime.error = "hardware renderer requested but software rendering is forced by the environment";
+        return runtime;
+    }
+
+    runtime.software_renderer = renderer == RendererMode::Software || software_forced;
     runtime.renderer_mode = runtime.software_renderer ? "software" : (renderer == RendererMode::Hardware ? "hardware" : "driver_default");
 
 #if defined(__linux__)
@@ -124,6 +131,14 @@ RuntimeEnvironment detect_runtime_environment(const Config& config) {
         else runtime.use_xvfb = true;
     } else if (headless == HeadlessMode::Auto && !runtime.display_present && runtime.xvfb_available) {
         runtime.use_xvfb = true;
+    }
+
+    if (runtime.use_xvfb && renderer == RendererMode::Hardware) {
+        runtime.use_xvfb = false;
+        runtime.renderer_mode = "hardware";
+        runtime.headless_backend = "none";
+        runtime.error = "hardware renderer requested but Xvfb fallback uses Mesa software rendering";
+        return runtime;
     }
 
     if (runtime.use_xvfb) {
@@ -168,6 +183,16 @@ bool drain_fd(int fd,
         if (errno == EAGAIN || errno == EWOULDBLOCK) return read_any;
         return read_any;
     }
+}
+
+bool process_group_exists(pid_t pgid) {
+    errno = 0;
+    if (::kill(-pgid, 0) == 0) return true;
+    return errno == EPERM;
+}
+
+void signal_process_group(pid_t pgid, int signal_number, const char* label) {
+    if (::kill(-pgid, signal_number) != 0 && errno != ESRCH) std::perror(label);
 }
 #endif
 
@@ -286,9 +311,9 @@ RunResult run_process(const std::string& command,
             result.timed_out = true;
             term_sent = true;
             term_at = now;
-            if (kill(-pid, SIGTERM) != 0 && errno != ESRCH) std::perror("renderercheck: SIGTERM");
+            signal_process_group(pid, SIGTERM, "renderercheck: SIGTERM");
         } else if (term_sent && std::chrono::duration<double, std::milli>(now - term_at).count() > 250.0) {
-            if (kill(-pid, SIGKILL) != 0 && errno != ESRCH) std::perror("renderercheck: SIGKILL");
+            signal_process_group(pid, SIGKILL, "renderercheck: SIGKILL");
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
@@ -300,6 +325,22 @@ RunResult run_process(const std::string& command,
             if (waited < 0 && errno == EINTR) continue;
             break;
         }
+    }
+
+    if (!result.timed_out && process_group_exists(pid)) {
+        term_sent = true;
+        term_at = std::chrono::steady_clock::now();
+        signal_process_group(pid, SIGTERM, "renderercheck: cleanup SIGTERM");
+    }
+
+    if (term_sent) {
+        const auto cleanup_deadline = term_at + std::chrono::milliseconds(250);
+        while (process_group_exists(pid) && std::chrono::steady_clock::now() < cleanup_deadline) {
+            drain_fd(out_pipe[0], std::cout, stdout_log);
+            drain_fd(err_pipe[0], std::cerr, stderr_log, validation.vulkan ? &validation_log : nullptr);
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        if (process_group_exists(pid)) signal_process_group(pid, SIGKILL, "renderercheck: cleanup SIGKILL");
     }
 
     for (int i = 0; i < 4; ++i) {
@@ -344,6 +385,14 @@ void add_failure(TestReport& report, const std::string& failure) {
 } // namespace
 
 int run_tests(std::string_view filter) {
+    std::error_code ec;
+    fs::create_directories(".rendercheck", ec);
+    ec.clear();
+    fs::remove(".rendercheck/report.md", ec);
+    ec.clear();
+    fs::remove(".rendercheck/results.json", ec);
+    ec.clear();
+
     Config config;
     std::string error;
     if (!load_config("rendercheck.toml", config, error)) {
@@ -368,12 +417,6 @@ int run_tests(std::string_view filter) {
         else std::cerr << "renderercheck: no enabled tests\n";
         return 2;
     }
-
-    std::error_code ec;
-    fs::create_directories(".rendercheck", ec);
-    fs::remove(".rendercheck/report.md", ec);
-    ec.clear();
-    fs::remove(".rendercheck/results.json", ec);
 
     if (config.validation.vulkan) {
         std::string detail;

@@ -27,6 +27,6 @@ renderercheck run
 
 Docs: https://xt9y.de/rendercheck.html
 
-Backend examples and regression fixtures are in [`examples/`](examples/): C, GLFW/OpenGL, raylib, SDL3, Vulkan validation, and Metal.
+Backend examples and regression fixtures are in [`examples/`](examples/): C, surfaceless EGL/OpenGL ES, GLFW/OpenGL, raylib, SDL3, Vulkan validation, and Metal.
 
 MIT

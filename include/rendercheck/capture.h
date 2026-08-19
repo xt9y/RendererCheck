@@ -45,7 +45,8 @@ static inline int rendercheck_capture_due(uint64_t frame_index) {
 }
 
 static inline int rendercheck_frame_is_last(uint64_t frame_index) {
-    return frame_index + 1u >= rendercheck_frame_limit();
+    const uint64_t limit = rendercheck_frame_limit();
+    return frame_index >= limit - 1u;
 }
 
 static inline int rendercheck_rgb_row_bytes(uint32_t width, size_t channels, size_t* out) {

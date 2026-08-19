@@ -75,6 +75,7 @@ std::string platform_string() {
     return "unknown";
 }
 
+#if defined(__linux__)
 bool env_has_value(const char* name) {
     const char* value = std::getenv(name);
     return value && *value;
@@ -86,6 +87,7 @@ bool env_truthy(const char* name) {
     const std::string_view v(value);
     return v == "1" || v == "true" || v == "yes" || v == "on";
 }
+#endif
 
 bool executable_in_path(const char* name) {
     const char* raw_path = std::getenv("PATH");
@@ -235,7 +237,19 @@ int run_doctor(bool verbose) {
         fail("headless policy", "xvfb requested but Xvfb tooling is unavailable");
         return 1;
     }
-    if (env_truthy("LIBGL_ALWAYS_SOFTWARE")) ok("renderer mode", "software renderer forced by LIBGL_ALWAYS_SOFTWARE");
+
+    const bool software_forced = env_truthy("LIBGL_ALWAYS_SOFTWARE") || env_truthy("RENDERCHECK_SOFTWARE_RENDERER");
+    if (software_forced) ok("renderer mode", "software renderer forced by environment");
+    if (have_config && config.project.renderer == RendererMode::Hardware && software_forced) {
+        fail("renderer policy", "hardware renderer requested but software rendering is forced by the environment");
+        return 1;
+    }
+    const bool would_use_xvfb = have_config && !display_present && xvfb_ready &&
+        (config.project.headless == HeadlessMode::Auto || config.project.headless == HeadlessMode::Xvfb);
+    if (would_use_xvfb && config.project.renderer == RendererMode::Hardware) {
+        fail("renderer policy", "hardware renderer requested but Xvfb fallback uses Mesa software rendering");
+        return 1;
+    }
 #endif
 
     const bool vulkan_required = have_config && config.validation.vulkan;

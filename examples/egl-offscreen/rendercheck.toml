@@ -1,0 +1,18 @@
+[project]
+name = "egl-offscreen"
+command = "EGL_PLATFORM=surfaceless ./egl-offscreen"
+cwd = "."
+baseline_dir = "baselines"
+headless = "none"
+renderer = "software"
+timeout_ms = 5000.0
+
+[validation]
+vulkan = false
+
+[[test]]
+name = "egl-frame"
+capture = true
+warmup_frames = 2
+pixel_threshold = 0
+max_changed_percent = 0.0
