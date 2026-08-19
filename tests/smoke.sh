@@ -57,8 +57,8 @@ trap '' TERM
 sleep 5
 SH
   chmod +x renderer
-  printf '[project]\nname="timeout"\ncommand="./renderer"\ntimeout_ms=100\n' > rendercheck.toml
-  if "$BIN" run >/dev/null 2>&1; then exit 1; fi
+  printf '[project]\nname="timeout"\ncommand="./renderer"\nheadless="none"\ntimeout_ms=100\n' > rendercheck.toml
+  if RENDERCHECK_HEADLESS_AUTO=0 "$BIN" run >/dev/null 2>&1; then exit 1; fi
   grep -q '"timed_out": true' .rendercheck/results.json
   grep -q '"exit_code": 124' .rendercheck/results.json
 )
@@ -78,8 +78,8 @@ trap 'exit 0' TERM
 wait
 SH
   chmod +x renderer
-  printf '[project]\nname="timeout-tree"\ncommand="./renderer"\ntimeout_ms=1000\n' > rendercheck.toml
-  if "$BIN" run >/dev/null 2>&1; then exit 1; fi
+  printf '[project]\nname="timeout-tree"\ncommand="./renderer"\nheadless="none"\ntimeout_ms=1000\n' > rendercheck.toml
+  if RENDERCHECK_HEADLESS_AUTO=0 "$BIN" run >/dev/null 2>&1; then exit 1; fi
   child_pid=$(cat child.pid)
   sleep 1
   if kill -0 "$child_pid" 2>/dev/null; then
@@ -195,6 +195,10 @@ SH
       exit 1
     fi
     grep -q 'hardware renderer requested but Xvfb fallback uses Mesa software rendering' .rendercheck/report.md
+    if DISPLAY= WAYLAND_DISPLAY= LIBGL_ALWAYS_SOFTWARE= RENDERCHECK_SOFTWARE_RENDERER= PATH="$tmp/bin:$PATH" "$BIN" doctor >/dev/null 2>&1; then
+      echo 'doctor unexpectedly accepted hardware mode with Xvfb fallback' >&2
+      exit 1
+    fi
   )
   rm -rf "$tmp"
 fi
