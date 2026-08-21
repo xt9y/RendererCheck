@@ -1,6 +1,6 @@
 [project]
 name = "vulkan-validation"
-command = "./vulkan-validation"
+command = "./vulkan-validation 1>&2"
 cwd = "."
 headless = "none"
 renderer = "software"
