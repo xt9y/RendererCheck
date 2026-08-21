@@ -57,10 +57,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tar -tzf "dist/renderercheck-${PACKAGE_LABEL}-linux-x86_64.tar.gz" | grep -q '/bin/renderercheck$'
-          tar -tzf "dist/renderercheck-${PACKAGE_LABEL}-linux-x86_64.tar.gz" | grep -q '/include/rendercheck/capture.h$'
-          tar -tzf "dist/renderercheck-${PACKAGE_LABEL}-linux-x86_64.tar.gz" | grep -q '/include/rendercheck/metrics.h$'
-          sha256sum -c dist/SHA256SUMS
+          archive="dist/renderercheck-${PACKAGE_LABEL}-linux-x86_64.tar.gz"
+          tar -tzf "$archive" > /tmp/renderercheck-package-files.txt
+          grep -q '/bin/renderercheck$' /tmp/renderercheck-package-files.txt
+          grep -q '/include/rendercheck/capture.h$' /tmp/renderercheck-package-files.txt
+          grep -q '/include/rendercheck/metrics.h$' /tmp/renderercheck-package-files.txt
+          (cd dist && sha256sum -c SHA256SUMS)
 
       - name: Upload release package
         uses: actions/upload-artifact@v4
