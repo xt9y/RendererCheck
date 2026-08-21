@@ -3,6 +3,7 @@ name: Build and integration
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -17,7 +18,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build with warnings as errors
-        run: make CXXFLAGS='-std=c++20 -O2 -Wall -Wextra -Wpedantic -Werror'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cxxflags='-std=c++20 -O2 -Wall -Wextra -Wpedantic -Werror'
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            cxxflags+=' -Wno-unused-function'
+          fi
+          make CXXFLAGS="$cxxflags"
       - name: Smoke tests
         run: make test
 
@@ -79,8 +87,17 @@ jobs:
           renderercheck run opengl-frame
           grep -q '"renderer_mode": "software"' .rendercheck/results.json
       - name: Build raylib
+        shell: bash
         run: |
-          git clone --depth 1 --branch 5.0 https://github.com/raysan5/raylib.git /tmp/raylib
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            rm -rf /tmp/raylib
+            if git clone --depth 1 --branch 5.0 https://github.com/raysan5/raylib.git /tmp/raylib; then
+              break
+            fi
+            if [[ "$attempt" == 3 ]]; then exit 1; fi
+            sleep $((attempt * 2))
+          done
           cmake -S /tmp/raylib -B /tmp/raylib-build -DBUILD_EXAMPLES=OFF -DBUILD_SHARED_LIBS=ON
           cmake --build /tmp/raylib-build --parallel 2
           sudo cmake --install /tmp/raylib-build
@@ -98,8 +115,17 @@ jobs:
           renderercheck approve raylib-frame
           renderercheck run raylib-frame
       - name: Build SDL3
+        shell: bash
         run: |
-          git clone --depth 1 https://github.com/libsdl-org/SDL.git /tmp/SDL
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            rm -rf /tmp/SDL
+            if git clone --depth 1 https://github.com/libsdl-org/SDL.git /tmp/SDL; then
+              break
+            fi
+            if [[ "$attempt" == 3 ]]; then exit 1; fi
+            sleep $((attempt * 2))
+          done
           cmake -S /tmp/SDL -B /tmp/sdl3-build -DSDL_TESTS=OFF -DSDL_TEST_LIBRARY=OFF
           cmake --build /tmp/sdl3-build --parallel 2
           sudo cmake --install /tmp/sdl3-build
@@ -138,6 +164,7 @@ jobs:
             examples/raylib/.rendercheck/
             examples/sdl3/.rendercheck/
             examples/vulkan-validation/.rendercheck/
+          include-hidden-files: true
           if-no-files-found: ignore
 
   macos-metal:
@@ -146,8 +173,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build and install RendererCheck
+        shell: bash
         run: |
-          make CXXFLAGS='-std=c++20 -O2 -Wall -Wextra -Wpedantic -Werror'
+          set -euo pipefail
+          make CXXFLAGS='-std=c++20 -O2 -Wall -Wextra -Wpedantic -Werror -Wno-unused-function'
           sudo make install
       - name: Offscreen Metal capture
         working-directory: examples/metal
@@ -167,4 +196,5 @@ jobs:
         with:
           name: renderercheck-metal
           path: examples/metal/.rendercheck/
+          include-hidden-files: true
           if-no-files-found: ignore

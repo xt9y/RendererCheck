@@ -5,17 +5,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define WIDTH 64
-#define HEIGHT 64
+#define WIDTH 16
+#define HEIGHT 16
 
 int main(void) {
     static uint8_t pixels[WIDTH * HEIGHT * 3];
     for (uint32_t y = 0; y < HEIGHT; ++y) {
         for (uint32_t x = 0; x < WIDTH; ++x) {
             const size_t i = ((size_t)y * WIDTH + x) * 3u;
-            pixels[i + 0] = (uint8_t)(x * 4u);
-            pixels[i + 1] = (uint8_t)(y * 4u);
-            pixels[i + 2] = (uint8_t)((x ^ y) * 4u);
+            pixels[i + 0] = (uint8_t)(x * 16u);
+            pixels[i + 1] = (uint8_t)(y * 16u);
+            pixels[i + 2] = (uint8_t)((x ^ y) * 16u);
         }
     }
     if (getenv("RENDERCHECK_EXAMPLE_MUTATE")) pixels[0] ^= 0xffu;

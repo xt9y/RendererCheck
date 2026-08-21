@@ -4,29 +4,93 @@ on:
   push:
     tags:
       - 'v*'
+  pull_request:
+    paths:
+      - '.github/workflows/release.yml'
+      - 'Makefile'
+      - 'src/**'
+      - 'include/**'
+      - 'README.md'
+      - 'LICENSE'
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  release:
+  package:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+
       - name: Build
         run: make CXXFLAGS='-std=c++20 -O2 -Wall -Wextra -Wpedantic -Werror'
-      - name: Package
+
+      - name: Choose package label
+        shell: bash
         run: |
-          mkdir -p dist/renderercheck-${GITHUB_REF_NAME}/bin dist/renderercheck-${GITHUB_REF_NAME}/include/rendercheck
-          cp build/renderercheck dist/renderercheck-${GITHUB_REF_NAME}/bin/
-          cp include/rendercheck/capture.h include/rendercheck/metrics.h dist/renderercheck-${GITHUB_REF_NAME}/include/rendercheck/
-          cp README.md LICENSE dist/renderercheck-${GITHUB_REF_NAME}/
-          tar -C dist -czf dist/renderercheck-${GITHUB_REF_NAME}-linux-x86_64.tar.gz renderercheck-${GITHUB_REF_NAME}
-          (cd dist && sha256sum renderercheck-${GITHUB_REF_NAME}-linux-x86_64.tar.gz > SHA256SUMS)
+          set -euo pipefail
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            label="$GITHUB_REF_NAME"
+          else
+            label="ci-${GITHUB_RUN_ID}"
+          fi
+          echo "PACKAGE_LABEL=$label" >> "$GITHUB_ENV"
+
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="dist/renderercheck-${PACKAGE_LABEL}"
+          mkdir -p "$root/bin" "$root/include/rendercheck"
+          cp build/renderercheck "$root/bin/"
+          cp include/rendercheck/capture.h include/rendercheck/metrics.h "$root/include/rendercheck/"
+          cp README.md LICENSE "$root/"
+          tar -C dist -czf "dist/renderercheck-${PACKAGE_LABEL}-linux-x86_64.tar.gz" "renderercheck-${PACKAGE_LABEL}"
+          (
+            cd dist
+            sha256sum "renderercheck-${PACKAGE_LABEL}-linux-x86_64.tar.gz" > SHA256SUMS
+          )
+
+      - name: Verify package
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="dist/renderercheck-${PACKAGE_LABEL}-linux-x86_64.tar.gz"
+          tar -tzf "$archive" > /tmp/renderercheck-package-files.txt
+          grep -q '/bin/renderercheck$' /tmp/renderercheck-package-files.txt
+          grep -q '/include/rendercheck/capture.h$' /tmp/renderercheck-package-files.txt
+          grep -q '/include/rendercheck/metrics.h$' /tmp/renderercheck-package-files.txt
+          (cd dist && sha256sum -c SHA256SUMS)
+
+      - name: Upload release package
+        uses: actions/upload-artifact@v4
+        with:
+          name: renderercheck-release-package
+          path: |
+            dist/renderercheck-*-linux-x86_64.tar.gz
+            dist/SHA256SUMS
+          if-no-files-found: error
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download release package
+        uses: actions/download-artifact@v4
+        with:
+          name: renderercheck-release-package
+          path: dist
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
           files: |
-            dist/renderercheck-${{ github.ref_name }}-linux-x86_64.tar.gz
+            dist/renderercheck-*-linux-x86_64.tar.gz
             dist/SHA256SUMS

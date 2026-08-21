@@ -150,6 +150,15 @@ std::string build_markdown_report(const std::vector<TestReport>& reports, std::s
 
 void write_json_string(std::ostream& out, std::string_view value) { out << '"' << json_escape(value) << '"'; }
 
+void append_validation_layer_log(std::string_view test_name) {
+    const fs::path layer_log = capture_output_dir(test_name) / "validation-layer.log";
+    std::ifstream in(layer_log, std::ios::binary);
+    if (!in) return;
+    std::ofstream out(validation_path(test_name), std::ios::binary | std::ios::app);
+    if (!out) return;
+    out << in.rdbuf();
+}
+
 } // namespace
 
 fs::path metrics_path(std::string_view name) { return capture_output_dir(name) / "metrics.txt"; }
@@ -183,6 +192,14 @@ bool prepare_child_checks(std::string_view test_name,
     append_csv_env("VK_LOADER_LAYERS_ENABLE", "VK_LAYER_KHRONOS_validation");
     if (!std::getenv("VK_INSTANCE_LAYERS")) ::setenv("VK_INSTANCE_LAYERS", "VK_LAYER_KHRONOS_validation", 1);
     if (!std::getenv("VK_LOADER_DEBUG")) ::setenv("VK_LOADER_DEBUG", "error,warn", 1);
+
+    // Validation layers may retain their own logging destination instead of writing
+    // through the child's redirected stderr. Force the layer's LOG_MSG action into
+    // a per-test file, then merge it into validation.log before analysis.
+    const std::string layer_log = fs::absolute(output_dir / "validation-layer.log").string();
+    ::setenv("VK_LAYER_DEBUG_ACTION", "VK_DBG_LAYER_ACTION_LOG_MSG", 1);
+    ::setenv("VK_LAYER_REPORT_FLAGS", "error,warn", 1);
+    ::setenv("VK_LAYER_LOG_FILENAME", layer_log.c_str(), 1);
     (void)test_name;
     return true;
 #else
@@ -194,12 +211,15 @@ bool prepare_child_checks(std::string_view test_name,
 ValidationResult analyze_validation(std::string_view test_name, const ValidationConfig& config) {
     ValidationResult result;
     if (!config.vulkan) return result;
+    append_validation_layer_log(test_name);
     std::ifstream in(validation_path(test_name));
     std::string line;
     while (std::getline(in, line)) {
         const std::string lower = lower_copy(line);
-        if (lower.find("validation error") != std::string::npos) ++result.errors;
-        else if (lower.find("validation warning") != std::string::npos) ++result.warnings;
+        if (lower.find("validation error") != std::string::npos ||
+            lower.find("(error / spec)") != std::string::npos) ++result.errors;
+        else if (lower.find("validation warning") != std::string::npos ||
+                 lower.find("(warning / spec)") != std::string::npos) ++result.warnings;
         std::size_t pos = 0;
         while ((pos = line.find("VUID-", pos)) != std::string::npos) { ++result.vuids; pos += 5; }
     }
