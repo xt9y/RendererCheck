@@ -164,6 +164,7 @@ jobs:
             examples/raylib/.rendercheck/
             examples/sdl3/.rendercheck/
             examples/vulkan-validation/.rendercheck/
+          include-hidden-files: true
           if-no-files-found: ignore
 
   macos-metal:
@@ -195,4 +196,5 @@ jobs:
         with:
           name: renderercheck-metal
           path: examples/metal/.rendercheck/
+          include-hidden-files: true
           if-no-files-found: ignore
