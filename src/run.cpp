@@ -2,6 +2,7 @@
 #include "rendercheck/checks.h"
 #include "rendercheck/config.h"
 #include "rendercheck/doctor.h"
+#include "rendercheck/run_performance.h"
 #include "rendercheck/visual.h"
 
 #include <cerrno>
@@ -341,6 +342,43 @@ void add_failure(TestReport& report, const std::string& failure) {
     report.failures.push_back(failure);
 }
 
+void print_run_performance(const RunPerformanceResult& result,
+                           double regression_percent)
+{
+    std::cout << "  run performance:\n";
+    for (const auto& comparison : result.comparisons)
+    {
+        std::cout << std::fixed << std::setprecision(3)
+                  << "    " << comparison.name
+                  << " median " << comparison.current_median << " ms"
+                  << ", p95 " << comparison.current_p95 << " ms";
+
+        if (comparison.baseline_missing)
+        {
+            std::cout << "  [missing baseline]\n";
+            continue;
+        }
+
+        std::cout << " | baseline " << comparison.baseline_median
+                  << " / " << comparison.baseline_p95 << " ms"
+                  << " | delta " << std::showpos << comparison.median_delta_percent
+                  << "% / " << comparison.p95_delta_percent << "%" << std::noshowpos
+                  << (comparison.regressed ? "  [regression]" : "  [ok]")
+                  << '\n';
+    }
+
+    if (!result.passed)
+    {
+        std::cout << "  [fail] run performance baseline (allowed +"
+                  << std::fixed << std::setprecision(3)
+                  << regression_percent << "%)\n";
+    }
+    else
+    {
+        std::cout << "  [ok] run performance baseline\n";
+    }
+}
+
 } // namespace
 
 int run_tests(std::string_view filter) {
@@ -494,6 +532,51 @@ int run_tests(std::string_view filter) {
         if (perf.process_over_budget) { std::cout << "  [fail] process time exceeded budget\n"; add_failure(report, "process time exceeded budget"); }
         if (perf.gpu_over_budget) { std::cout << "  [fail] GPU time exceeded budget of " << performance.max_gpu_ms << " ms\n"; add_failure(report, "GPU time exceeded budget"); }
         if (!perf.passed) test_passed = false;
+
+        if (visual.capture)
+        {
+            const bool valid_process = run.exit_code == 0 && !run.timed_out;
+            std::string run_performance_error;
+            if (!save_run_performance_latest(
+                    selected_test.name,
+                    run.milliseconds,
+                    perf.metrics,
+                    valid_process,
+                    run_performance_error))
+            {
+                std::cout << "  [fail] " << run_performance_error << '\n';
+                add_failure(report, run_performance_error);
+                test_passed = false;
+            }
+            else if (valid_process)
+            {
+                const RunPerformanceResult run_performance = evaluate_run_performance(
+                        selected_test.name,
+                        run.milliseconds,
+                        perf.metrics,
+                        performance.regression_percent
+                    );
+                report.run_performance_checked = true;
+                report.run_performance_baseline_missing = run_performance.baseline_missing;
+                report.run_performance = run_performance.comparisons;
+                print_run_performance(run_performance, performance.regression_percent);
+
+                for (const auto& failure : run_performance.failures)
+                {
+                    add_failure(report, failure);
+                }
+
+                if (run_performance.baseline_missing)
+                {
+                    std::cout << "  approve: renderercheck approve " << selected_test.name << '\n';
+                }
+
+                if (!run_performance.passed)
+                {
+                    test_passed = false;
+                }
+            }
+        }
 
         if (run.exit_code == 0 && !run.timed_out && visual.capture) {
             report.visual_checked = true;
