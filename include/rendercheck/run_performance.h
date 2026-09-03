@@ -15,6 +15,7 @@ struct RunPerformanceComparison {
     std::size_t samples = 0;
     double current_median = 0.0;
     double current_p95 = 0.0;
+    bool gating = true;
     bool baseline_missing = false;
     double baseline_median = 0.0;
     double baseline_p95 = 0.0;
@@ -29,6 +30,12 @@ struct RunPerformanceResult {
     std::vector<RunPerformanceComparison> comparisons;
     std::vector<std::string> failures;
 };
+
+inline bool run_performance_metric_is_gating(std::string_view name,
+                                             bool has_native_timing)
+{
+    return name != "process_ms" || !has_native_timing;
+}
 
 std::filesystem::path run_performance_baseline_path();
 
