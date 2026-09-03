@@ -2,8 +2,8 @@ CC ?= cc
 CXX ?= c++
 BUILD_DIR = build
 PRODUCT = $(BUILD_DIR)/renderercheck
-SOURCES = src/main.cpp src/doctor.cpp src/config.cpp src/run.cpp src/perf.cpp src/checks.cpp src/image.cpp src/visual.cpp
-HEADERS = include/rendercheck/doctor.h include/rendercheck/config.h include/rendercheck/run.h include/rendercheck/perf.h include/rendercheck/checks.h include/rendercheck/image.h include/rendercheck/visual.h include/rendercheck/capture.h include/rendercheck/metrics.h include/rendercheck/version.h include/rendercheck/vulkan_min.h
+SOURCES = src/main.cpp src/doctor.cpp src/config.cpp src/run.cpp src/perf.cpp src/perf_compare.cpp src/checks.cpp src/image.cpp src/visual.cpp
+HEADERS = include/rendercheck/doctor.h include/rendercheck/config.h include/rendercheck/run.h include/rendercheck/perf.h include/rendercheck/perf_compare.h include/rendercheck/checks.h include/rendercheck/image.h include/rendercheck/visual.h include/rendercheck/capture.h include/rendercheck/metrics.h include/rendercheck/version.h include/rendercheck/vulkan_min.h
 CXXFLAGS ?= -std=c++20 -O2 -Wall -Wextra -Wpedantic
 CPPFLAGS += -Iinclude
 
