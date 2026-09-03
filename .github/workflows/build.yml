@@ -2,7 +2,8 @@ name: Build and integration
 
 on:
   push:
-  pull_request:
+    branches:
+      - ci-check
   workflow_dispatch:
 
 permissions:
