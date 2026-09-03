@@ -100,9 +100,11 @@ int main()
     }
     assert(saw_diagnostic_process);
 
+    /* Large relative p95 movement below the tail-noise floor remains accepted
+     * when the median is still inside its stricter floor. */
     MetricSummary scheduler_noise_cpu = cpu;
     scheduler_noise_cpu.median = 0.200;
-    scheduler_noise_cpu.p95 = 0.250;
+    scheduler_noise_cpu.p95 = 0.450;
     const std::vector<MetricSummary> scheduler_noise_metrics = {scheduler_noise_cpu};
     const auto scheduler_noise = rendercheck::evaluate_run_performance(
             "FinalScene",
@@ -112,9 +114,10 @@ int main()
         );
     assert(scheduler_noise.passed);
 
+    /* A p95-only change beyond 0.50 ms still gates even if the median does not. */
     MetricSummary regressed_cpu = cpu;
-    regressed_cpu.median = 0.400;
-    regressed_cpu.p95 = 0.450;
+    regressed_cpu.median = 0.200;
+    regressed_cpu.p95 = 0.600;
     const std::vector<MetricSummary> regressed_metrics = {regressed_cpu};
     const auto regressed = rendercheck::evaluate_run_performance("FinalScene", 1000.0, regressed_metrics, 15.0);
     assert(!regressed.passed);

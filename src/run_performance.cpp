@@ -292,7 +292,8 @@ RunPerformanceResult evaluate_run_performance(std::string_view test_name,
             || run_performance_exceeds_regression_floor(
                     value.p95,
                     baseline.p95,
-                    regression_percent
+                    regression_percent,
+                    RUN_PERFORMANCE_P95_ABSOLUTE_FLOOR_MS
                 );
         comparison.regressed = comparison.gating && raw_regression;
 

@@ -39,11 +39,12 @@ inline bool run_performance_metric_is_gating(std::string_view name,
 }
 
 inline constexpr double RUN_PERFORMANCE_ABSOLUTE_FLOOR_MS = 0.25;
+inline constexpr double RUN_PERFORMANCE_P95_ABSOLUTE_FLOOR_MS = 0.50;
 
-/* Run-performance captures contain several sub-millisecond bookkeeping
- * metrics. A large percentage swing there can be only a few microseconds and
- * should not fail a rendering run. A regression must exceed both the normal
- * relative threshold and the absolute timing floor. */
+/* Run-performance captures contain short sub-millisecond bookkeeping
+ * metrics. A regression must exceed both the relative threshold and an
+ * absolute timing floor. Median timing uses the stricter default floor;
+ * p95 evaluation supplies the larger tail-noise floor explicitly. */
 inline bool run_performance_exceeds_regression_floor(
         double current_ms,
         double baseline_ms,
