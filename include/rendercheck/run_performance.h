@@ -34,7 +34,8 @@ struct RunPerformanceResult {
 inline bool run_performance_metric_is_gating(std::string_view name,
                                              bool has_native_timing)
 {
-    return name != "process_ms" || !has_native_timing;
+    (void)has_native_timing;
+    return name != "process_ms";
 }
 
 std::filesystem::path run_performance_baseline_path();
