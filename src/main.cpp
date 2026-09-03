@@ -1,4 +1,5 @@
 #include "rendercheck/doctor.h"
+#include "rendercheck/perf.h"
 #include "rendercheck/run.h"
 #include "rendercheck/version.h"
 #include "rendercheck/visual.h"
@@ -16,13 +17,15 @@ void print_help() {
     std::cout <<
         "RendererCheck — graphics CI for native renderers\n\n"
         "Usage:\n"
-        "  renderercheck init                create rendercheck.toml\n"
-        "  renderercheck doctor [--verbose]  inspect the local graphics environment\n"
-        "  renderercheck run [test]          execute renderer tests and checks\n"
-        "  renderercheck diff [test]         compare the latest capture with its baseline\n"
-        "  renderercheck approve [test]      accept the latest capture as baseline\n"
-        "  renderercheck version             print version\n"
-        "  renderercheck help                show this help\n";
+        "  renderercheck init                   create rendercheck.toml\n"
+        "  renderercheck doctor [--verbose]     inspect the local graphics environment\n"
+        "  renderercheck run [test]             execute renderer tests and checks\n"
+        "  renderercheck perf [case]            execute renderer performance cases\n"
+        "  renderercheck perf --approve [case]  approve local performance baselines\n"
+        "  renderercheck diff [test]            compare the latest capture with its baseline\n"
+        "  renderercheck approve [test]         accept the latest capture as baseline\n"
+        "  renderercheck version                print version\n"
+        "  renderercheck help                   show this help\n";
 }
 
 void clear_run_reports() {
@@ -55,7 +58,11 @@ int init_project() {
         "fail_on_warning = false\n\n"
         "[performance]\n"
         "# max_gpu_ms = 16.67\n"
-        "# max_process_ms = 1000.0\n\n"
+        "# max_process_ms = 1000.0\n"
+        "# warmup_ms = 1000.0\n"
+        "# sample_ms = 3000.0\n"
+        "# regression_percent = 15.0\n"
+        "# min_samples = 3\n\n"
         "# [[test]]\n"
         "# name = \"triangle\"\n"
         "# args = \"--scene tests/triangle.scene\"\n"
@@ -64,7 +71,11 @@ int init_project() {
         "# pixel_threshold = 0\n"
         "# max_changed_percent = 0.0\n"
         "# max_gpu_ms = 16.67\n"
-        "# timeout_ms = 30000.0\n";
+        "# timeout_ms = 30000.0\n\n"
+        "# [[perf]]\n"
+        "# name = \"steady-state\"\n"
+        "# command = \"./build/app\"\n"
+        "# env = \"MY_BENCHMARK_MODE=1\"\n";
     std::cout << "created rendercheck.toml\n";
     return 0;
 }
@@ -87,6 +98,25 @@ int main(int argc, char** argv) {
     if (command == "init") {
         if (argc != 2) { std::cerr << "renderercheck: init takes no arguments\n"; return 2; }
         return init_project();
+    }
+    if (command == "perf") {
+        bool approve = false;
+        std::string_view filter;
+        if (argc == 3) {
+            if (std::string_view(argv[2]) == "--approve") approve = true;
+            else filter = argv[2];
+        } else if (argc == 4) {
+            if (std::string_view(argv[2]) != "--approve") {
+                std::cerr << "renderercheck: perf syntax is perf [case] or perf --approve [case]\n";
+                return 2;
+            }
+            approve = true;
+            filter = argv[3];
+        } else if (argc > 4) {
+            std::cerr << "renderercheck: too many arguments for perf\n";
+            return 2;
+        }
+        return rendercheck::run_perf(filter, approve);
     }
     if (argc > 3) { std::cerr << "renderercheck: too many arguments\n"; return 2; }
     const std::string_view filter = argc == 3 ? std::string_view(argv[2]) : std::string_view{};
