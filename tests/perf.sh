@@ -14,12 +14,46 @@ cat > renderer <<'SH'
 set -eu
 [ "${RENDERCHECK:-}" = 1 ]
 [ "${RENDERCHECK_PERF:-}" = 1 ]
-[ "${RENDERCHECK_PERF_CASE:-}" = steady ]
+[ -n "${RENDERCHECK_PERF_CASE:-}" ]
 [ -n "${RENDERCHECK_PERF_WARMUP_MS:-}" ]
 [ -n "${RENDERCHECK_PERF_DURATION_MS:-}" ]
 [ -n "${RENDERCHECK_METRICS_PATH:-}" ]
 echo 'synthetic perf stdout'
 echo 'synthetic perf stderr' >&2
+
+case "${RENDERCHECK_PERF_CASE}" in
+  BVH4-linear)
+    printf 'direct_ms=0.100\ndirect_ms=0.102\ndirect_ms=0.098\n' >> "$RENDERCHECK_METRICS_PATH"
+    printf 'lumen_trace_ms=0.050\nlumen_trace_ms=0.052\nlumen_trace_ms=0.048\n' >> "$RENDERCHECK_METRICS_PATH"
+    exit 0
+    ;;
+  BVH4-bvh)
+    printf 'direct_ms=0.140\ndirect_ms=0.142\ndirect_ms=0.138\n' >> "$RENDERCHECK_METRICS_PATH"
+    printf 'lumen_trace_ms=0.060\nlumen_trace_ms=0.062\nlumen_trace_ms=0.058\n' >> "$RENDERCHECK_METRICS_PATH"
+    exit 0
+    ;;
+  BVH16-linear)
+    printf 'direct_ms=0.220\ndirect_ms=0.222\ndirect_ms=0.218\n' >> "$RENDERCHECK_METRICS_PATH"
+    printf 'lumen_trace_ms=0.090\nlumen_trace_ms=0.092\nlumen_trace_ms=0.088\n' >> "$RENDERCHECK_METRICS_PATH"
+    exit 0
+    ;;
+  BVH16-bvh)
+    printf 'direct_ms=0.160\ndirect_ms=0.162\ndirect_ms=0.158\n' >> "$RENDERCHECK_METRICS_PATH"
+    printf 'lumen_trace_ms=0.070\nlumen_trace_ms=0.072\nlumen_trace_ms=0.068\n' >> "$RENDERCHECK_METRICS_PATH"
+    exit 0
+    ;;
+  BVH64-linear)
+    printf 'direct_ms=0.700\ndirect_ms=0.710\ndirect_ms=0.690\n' >> "$RENDERCHECK_METRICS_PATH"
+    printf 'lumen_trace_ms=0.240\nlumen_trace_ms=0.245\nlumen_trace_ms=0.235\n' >> "$RENDERCHECK_METRICS_PATH"
+    exit 0
+    ;;
+  BVH64-bvh)
+    printf 'direct_ms=0.280\ndirect_ms=0.285\ndirect_ms=0.275\n' >> "$RENDERCHECK_METRICS_PATH"
+    printf 'lumen_trace_ms=0.190\nlumen_trace_ms=0.195\nlumen_trace_ms=0.185\n' >> "$RENDERCHECK_METRICS_PATH"
+    exit 0
+    ;;
+esac
+
 case "${PERF_PROFILE:-base}" in
   slow)
     printf 'direct_ms=1.800\ndirect_ms=2.000\ndirect_ms=2.200\n' >> "$RENDERCHECK_METRICS_PATH"
@@ -56,6 +90,24 @@ min_samples = 3
 
 [[perf]]
 name = "steady"
+
+[[perf]]
+name = "BVH4-linear"
+
+[[perf]]
+name = "BVH4-bvh"
+
+[[perf]]
+name = "BVH16-linear"
+
+[[perf]]
+name = "BVH16-bvh"
+
+[[perf]]
+name = "BVH64-linear"
+
+[[perf]]
+name = "BVH64-bvh"
 TOML
 
 RENDERCHECK_HEADLESS_AUTO=0 "$BIN" perf steady >/dev/null
@@ -83,4 +135,12 @@ grep -q 'regression' .rendercheck/performance/report.md
 PERF_PROFILE=fast RENDERCHECK_HEADLESS_AUTO=0 "$BIN" perf steady >/dev/null
 grep -q '"baseline_median"' .rendercheck/performance/results.json
 
-echo 'Performance CLI and baseline tests passed'
+RENDERCHECK_HEADLESS_AUTO=0 "$BIN" perf > perf-all.txt
+grep -q 'BVH crossover' perf-all.txt
+grep -Eq '4[[:space:]].*linear' perf-all.txt
+grep -Eq '16[[:space:]].*bvh' perf-all.txt
+grep -q 'Recommended crossover: 16' perf-all.txt
+grep -q '## BVH crossover' .rendercheck/performance/report.md
+grep -q 'Recommended crossover: 16' .rendercheck/performance/report.md
+
+echo 'Performance CLI, baseline, and BVH crossover tests passed'
