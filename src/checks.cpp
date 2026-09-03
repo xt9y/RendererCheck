@@ -159,6 +159,35 @@ void append_validation_layer_log(std::string_view test_name) {
     out << in.rdbuf();
 }
 
+MetricSummary summarize_metric(std::string name, std::vector<double> samples) {
+    MetricSummary summary;
+    summary.name = std::move(name);
+    summary.samples = samples.size();
+    if (samples.empty()) return summary;
+
+    std::sort(samples.begin(), samples.end());
+    summary.minimum = samples.front();
+    summary.maximum = samples.back();
+
+    double sum = 0.0;
+    for (const double value : samples) sum += value;
+    summary.average = sum / static_cast<double>(samples.size());
+
+    const std::size_t middle = samples.size() / 2u;
+    if (samples.size() % 2u == 0u) {
+        summary.median = (samples[middle - 1u] + samples[middle]) * 0.5;
+    } else {
+        summary.median = samples[middle];
+    }
+
+    const std::size_t rank = std::max<std::size_t>(
+        1u,
+        static_cast<std::size_t>(std::ceil(0.95 * static_cast<double>(samples.size())))
+    );
+    summary.p95 = samples[std::min(rank - 1u, samples.size() - 1u)];
+    return summary;
+}
+
 } // namespace
 
 fs::path metrics_path(std::string_view name) { return capture_output_dir(name) / "metrics.txt"; }
@@ -176,6 +205,28 @@ PerformanceConfig performance_config(const Config& config, const TestConfig* tes
 
 double timeout_config(const Config& config, const TestConfig* test) {
     return test && test->has_timeout_ms ? test->timeout_ms : config.project.timeout_ms;
+}
+
+std::vector<MetricSummary> summarize_metrics_file(const fs::path& path) {
+    std::ifstream in(path);
+    std::map<std::string, std::vector<double>> values;
+    std::string line;
+    while (std::getline(in, line)) {
+        const std::size_t eq = line.find('=');
+        if (eq == std::string::npos) continue;
+        const std::string name = line.substr(0, eq);
+        if (!metric_name_valid(name)) continue;
+        double value = 0.0;
+        if (!parse_metric_value(std::string_view(line).substr(eq + 1), value)) continue;
+        values[name].push_back(value);
+    }
+
+    std::vector<MetricSummary> summaries;
+    summaries.reserve(values.size());
+    for (auto& [name, samples] : values) {
+        summaries.push_back(summarize_metric(name, std::move(samples)));
+    }
+    return summaries;
 }
 
 bool prepare_child_checks(std::string_view test_name,
@@ -232,27 +283,9 @@ PerformanceResult analyze_performance(std::string_view test_name,
                                       const PerformanceConfig& config,
                                       bool software_renderer) {
     PerformanceResult result;
-    std::ifstream in(metrics_path(test_name));
-    std::map<std::string, std::vector<double>> values;
-    std::string line;
-    while (std::getline(in, line)) {
-        const std::size_t eq = line.find('=');
-        if (eq == std::string::npos) continue;
-        const std::string name = line.substr(0, eq);
-        if (!metric_name_valid(name)) continue;
-        double value = 0.0;
-        if (!parse_metric_value(std::string_view(line).substr(eq + 1), value)) continue;
-        values[name].push_back(value);
-    }
-    for (const auto& [name, samples] : values) {
-        MetricSummary summary;
-        summary.name = name;
-        summary.samples = samples.size();
-        double sum = 0.0;
-        for (const double value : samples) { sum += value; summary.maximum = std::max(summary.maximum, value); }
-        if (!samples.empty()) summary.average = sum / static_cast<double>(samples.size());
-        result.metrics.push_back(summary);
-        if (name == "gpu_ms") {
+    result.metrics = summarize_metrics_file(metrics_path(test_name));
+    for (const auto& summary : result.metrics) {
+        if (summary.name == "gpu_ms") {
             result.gpu_samples = summary.samples;
             result.gpu_average_ms = summary.average;
             result.gpu_max_ms = summary.maximum;
@@ -322,7 +355,10 @@ void write_reports(const std::vector<TestReport>& reports, std::size_t passed, s
                     if (m) out << ',';
                     out << "{\"name\":"; write_json_string(out, r.metrics[m].name);
                     out << ",\"samples\":" << r.metrics[m].samples
+                        << ",\"minimum\":" << r.metrics[m].minimum
                         << ",\"average\":" << r.metrics[m].average
+                        << ",\"median\":" << r.metrics[m].median
+                        << ",\"p95\":" << r.metrics[m].p95
                         << ",\"maximum\":" << r.metrics[m].maximum << '}';
                 }
                 out << "],\n      \"failures\": [";
