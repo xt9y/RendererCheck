@@ -32,6 +32,7 @@ $(BUILD_DIR)/run-performance-contract: tests/run_performance_contract.cpp src/ru
 
 test: $(PRODUCT) $(BUILD_DIR)/run-performance-contract
 	$(BUILD_DIR)/run-performance-contract
+	BIN="$(abspath $(PRODUCT))" ./tests/run_performance.sh
 	BIN="$(abspath $(PRODUCT))" ROOT="$(CURDIR)" CC="$(CC)" ./tests/smoke.sh
 	BIN="$(abspath $(PRODUCT))" sh ./tests/perf.sh
 	BIN="$(abspath $(PRODUCT))" ./tests/stale-report.sh
