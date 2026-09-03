@@ -101,8 +101,8 @@ int main()
     assert(saw_diagnostic_process);
 
     MetricSummary regressed_cpu = cpu;
-    regressed_cpu.median = 0.025;
-    regressed_cpu.p95 = 0.040;
+    regressed_cpu.median = 0.100;
+    regressed_cpu.p95 = 0.120;
     const std::vector<MetricSummary> regressed_metrics = {regressed_cpu};
     const auto regressed = rendercheck::evaluate_run_performance("FinalScene", 1000.0, regressed_metrics, 15.0);
     assert(!regressed.passed);

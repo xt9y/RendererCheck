@@ -30,8 +30,13 @@ $(BUILD_DIR)/run-performance-contract: tests/run_performance_contract.cpp src/ru
 	@mkdir -p $(BUILD_DIR)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -Werror tests/run_performance_contract.cpp src/run_performance.cpp -o $@
 
-test: $(PRODUCT) $(BUILD_DIR)/run-performance-contract
+$(BUILD_DIR)/run-performance-floor-contract: tests/run_performance_floor_contract.cpp include/rendercheck/run_performance.h
+	@mkdir -p $(BUILD_DIR)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -Werror tests/run_performance_floor_contract.cpp -o $@
+
+test: $(PRODUCT) $(BUILD_DIR)/run-performance-contract $(BUILD_DIR)/run-performance-floor-contract
 	$(BUILD_DIR)/run-performance-contract
+	$(BUILD_DIR)/run-performance-floor-contract
 	BIN="$(abspath $(PRODUCT))" sh ./tests/run_performance.sh
 	BIN="$(abspath $(PRODUCT))" ROOT="$(CURDIR)" CC="$(CC)" ./tests/smoke.sh
 	BIN="$(abspath $(PRODUCT))" sh ./tests/perf.sh

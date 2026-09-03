@@ -38,6 +38,29 @@ inline bool run_performance_metric_is_gating(std::string_view name,
     return name != "process_ms";
 }
 
+/* Run-performance captures contain several sub-millisecond bookkeeping
+ * metrics. A large percentage swing there can be only a few microseconds and
+ * should not fail a rendering run. A regression must exceed both the normal
+ * relative threshold and a small absolute timing floor. */
+inline bool run_performance_exceeds_regression_floor(
+        double current_ms,
+        double baseline_ms,
+        double regression_percent,
+        double absolute_floor_ms)
+{
+    if (current_ms <= baseline_ms + absolute_floor_ms)
+    {
+        return false;
+    }
+
+    if (baseline_ms <= 0.0)
+    {
+        return current_ms > absolute_floor_ms;
+    }
+
+    return current_ms > baseline_ms * (1.0 + regression_percent / 100.0);
+}
+
 std::filesystem::path run_performance_baseline_path();
 
 bool save_run_performance_latest(std::string_view test_name,

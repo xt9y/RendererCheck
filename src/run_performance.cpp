@@ -16,6 +16,8 @@ namespace fs = std::filesystem;
 namespace rendercheck {
 namespace {
 
+constexpr double RUN_PERFORMANCE_ABSOLUTE_FLOOR_MS = 0.05;
+
 struct Value {
     std::size_t samples = 0;
     double median = 0.0;
@@ -246,7 +248,6 @@ RunPerformanceResult evaluate_run_performance(std::string_view test_name,
     RunPerformanceResult result;
     const ValueMap current = current_values(test_name, process_ms, metrics);
     const ValueMap baselines = load_values(run_performance_baseline_path(), false);
-    const double factor = 1.0 + regression_percent / 100.0;
     const bool current_native_timing = has_native_timing(current, test_name);
     const bool baseline_native_timing = has_native_timing(baselines, test_name);
     const bool native_timing_expected = current_native_timing || baseline_native_timing;
@@ -285,8 +286,18 @@ RunPerformanceResult evaluate_run_performance(std::string_view test_name,
         comparison.median_delta_percent = delta_percent(value.median, baseline.median);
         comparison.p95_delta_percent = delta_percent(value.p95, baseline.p95);
         const bool raw_regression =
-            value.median > baseline.median * factor
-            || value.p95 > baseline.p95 * factor;
+            run_performance_exceeds_regression_floor(
+                    value.median,
+                    baseline.median,
+                    regression_percent,
+                    RUN_PERFORMANCE_ABSOLUTE_FLOOR_MS
+                )
+            || run_performance_exceeds_regression_floor(
+                    value.p95,
+                    baseline.p95,
+                    regression_percent,
+                    RUN_PERFORMANCE_ABSOLUTE_FLOOR_MS
+                );
         comparison.regressed = comparison.gating && raw_regression;
 
         if (comparison.regressed)
