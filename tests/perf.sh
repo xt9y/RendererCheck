@@ -18,6 +18,8 @@ set -eu
 [ -n "${RENDERCHECK_PERF_WARMUP_MS:-}" ]
 [ -n "${RENDERCHECK_PERF_DURATION_MS:-}" ]
 [ -n "${RENDERCHECK_METRICS_PATH:-}" ]
+echo 'synthetic perf stdout'
+echo 'synthetic perf stderr' >&2
 printf 'direct_ms=1.000\ndirect_ms=1.100\ndirect_ms=0.900\n' >> "$RENDERCHECK_METRICS_PATH"
 printf 'lumen_trace_ms=0.400\nlumen_trace_ms=0.450\nlumen_trace_ms=0.420\n' >> "$RENDERCHECK_METRICS_PATH"
 printf 'gpu_pipeline_ms=1.500\ngpu_pipeline_ms=1.600\ngpu_pipeline_ms=1.550\n' >> "$RENDERCHECK_METRICS_PATH"
