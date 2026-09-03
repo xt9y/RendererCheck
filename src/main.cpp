@@ -24,7 +24,7 @@ void print_help() {
         "  renderercheck perf [case]            execute renderer performance cases\n"
         "  renderercheck perf --approve [case]  approve local performance baselines\n"
         "  renderercheck diff [test]            compare the latest capture with its baseline\n"
-        "  renderercheck approve [test]         accept the latest capture as baseline\n"
+        "  renderercheck approve [test]         approve capture + run-performance baselines\n"
         "  renderercheck version                print version\n"
         "  renderercheck help                   show this help\n";
 }
