@@ -73,17 +73,19 @@ int main()
 
     const auto slower_process = rendercheck::evaluate_run_performance("FinalScene", 1400.0, metrics, 15.0);
     assert(slower_process.passed);
-    bool saw_diagnostic_process_regression = false;
+    bool saw_diagnostic_process = false;
     for (const auto& comparison : slower_process.comparisons)
     {
         if (comparison.name == "process_ms")
         {
             assert(!comparison.gating);
-            assert(comparison.regressed);
-            saw_diagnostic_process_regression = true;
+            assert(!comparison.regressed);
+            assert(comparison.median_delta_percent > 15.0);
+            assert(comparison.p95_delta_percent > 15.0);
+            saw_diagnostic_process = true;
         }
     }
-    assert(saw_diagnostic_process_regression);
+    assert(saw_diagnostic_process);
 
     MetricSummary regressed_cpu = cpu;
     regressed_cpu.median = 0.025;
