@@ -2,8 +2,8 @@ CC ?= cc
 CXX ?= c++
 BUILD_DIR = build
 PRODUCT = $(BUILD_DIR)/renderercheck
-SOURCES = src/main.cpp src/doctor.cpp src/config.cpp src/run.cpp src/perf.cpp src/perf_compare.cpp src/checks.cpp src/image.cpp src/visual.cpp
-HEADERS = include/rendercheck/doctor.h include/rendercheck/config.h include/rendercheck/run.h include/rendercheck/perf.h include/rendercheck/perf_compare.h include/rendercheck/checks.h include/rendercheck/image.h include/rendercheck/visual.h include/rendercheck/capture.h include/rendercheck/metrics.h include/rendercheck/version.h include/rendercheck/vulkan_min.h
+SOURCES = src/main.cpp src/doctor.cpp src/config.cpp src/run.cpp src/run_performance.cpp src/perf.cpp src/perf_compare.cpp src/checks.cpp src/image.cpp src/visual.cpp
+HEADERS = include/rendercheck/doctor.h include/rendercheck/config.h include/rendercheck/run.h include/rendercheck/run_performance.h include/rendercheck/perf.h include/rendercheck/perf_compare.h include/rendercheck/checks.h include/rendercheck/image.h include/rendercheck/visual.h include/rendercheck/capture.h include/rendercheck/metrics.h include/rendercheck/version.h include/rendercheck/vulkan_min.h
 CXXFLAGS ?= -std=c++20 -O2 -Wall -Wextra -Wpedantic
 CPPFLAGS += -Iinclude
 
@@ -26,7 +26,12 @@ $(PRODUCT): $(SOURCES) $(HEADERS)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(SOURCES) $(LDFLAGS) $(LDLIBS) -o $@
 	@echo "Build complete: $(PRODUCT)"
 
-test: $(PRODUCT)
+$(BUILD_DIR)/run-performance-contract: tests/run_performance_contract.cpp src/run_performance.cpp include/rendercheck/run_performance.h include/rendercheck/checks.h
+	@mkdir -p $(BUILD_DIR)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -Werror tests/run_performance_contract.cpp src/run_performance.cpp -o $@
+
+test: $(PRODUCT) $(BUILD_DIR)/run-performance-contract
+	$(BUILD_DIR)/run-performance-contract
 	BIN="$(abspath $(PRODUCT))" ROOT="$(CURDIR)" CC="$(CC)" ./tests/smoke.sh
 	BIN="$(abspath $(PRODUCT))" sh ./tests/perf.sh
 	BIN="$(abspath $(PRODUCT))" ./tests/stale-report.sh
