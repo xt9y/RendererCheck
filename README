@@ -1,0 +1,7 @@
+RendererCheck
+
+Renderer regression / validation tool.
+
+install --> make && sudo make install
+init    --> renderercheck init
+check   --> renderercheck run
