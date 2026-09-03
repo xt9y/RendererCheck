@@ -167,13 +167,14 @@ tmp=$(mktemp -d)
   cd "$tmp"
   cat > renderer <<'SH'
 #!/bin/sh
-printf 'gpu_ms=2.000\ngpu_ms=3.000\n' >> "$RENDERCHECK_METRICS_PATH"
+printf 'gpu_ms=4.000\ngpu_ms=1.000\ngpu_ms=3.000\ngpu_ms=2.000\n' >> "$RENDERCHECK_METRICS_PATH"
 echo 'Validation Warning: [ VUID-Smoke-00001 ] synthetic' >&2
 SH
   chmod +x renderer
-  printf '[project]\nname="engine"\ncommand="./renderer"\nheadless="none"\nrenderer="hardware"\n\n[performance]\nmax_gpu_ms=4\nmax_process_ms=10000\n' > rendercheck.toml
+  printf '[project]\nname="engine"\ncommand="./renderer"\nheadless="none"\nrenderer="hardware"\n\n[performance]\nmax_gpu_ms=5\nmax_process_ms=10000\n' > rendercheck.toml
   RENDERCHECK_HEADLESS_AUTO=0 "$BIN" run >/dev/null 2>/dev/null
-  grep -q '"gpu_max_ms": 3.000' .rendercheck/results.json
+  grep -q '"gpu_max_ms": 4.000' .rendercheck/results.json
+  grep -q '"name":"gpu_ms".*"minimum":1.000.*"median":2.500.*"p95":4.000.*"maximum":4.000' .rendercheck/results.json
 )
 rm -rf "$tmp"
 
