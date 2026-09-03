@@ -20,7 +20,10 @@ struct ValidationResult {
 struct MetricSummary {
     std::string name;
     std::size_t samples = 0;
+    double minimum = 0.0;
     double average = 0.0;
+    double median = 0.0;
+    double p95 = 0.0;
     double maximum = 0.0;
 };
 
@@ -82,6 +85,7 @@ std::filesystem::path stdout_path(std::string_view name);
 std::filesystem::path stderr_path(std::string_view name);
 PerformanceConfig performance_config(const Config& config, const TestConfig* test);
 double timeout_config(const Config& config, const TestConfig* test);
+std::vector<MetricSummary> summarize_metrics_file(const std::filesystem::path& path);
 
 bool prepare_child_checks(std::string_view test_name,
                           const std::filesystem::path& output_dir,
