@@ -71,6 +71,19 @@ int main()
     assert(same.passed);
     assert(!same.baseline_missing);
 
+    const auto missing_native_now = rendercheck::evaluate_run_performance("FinalScene", 1000.0, {}, 15.0);
+    assert(!missing_native_now.passed);
+    bool reported_missing_native = false;
+    for (const auto& failure : missing_native_now.failures)
+    {
+        if (failure.find("cpu_render_ms") != std::string::npos
+                && failure.find("metric missing") != std::string::npos)
+        {
+            reported_missing_native = true;
+        }
+    }
+    assert(reported_missing_native);
+
     const auto slower_process = rendercheck::evaluate_run_performance("FinalScene", 1400.0, metrics, 15.0);
     assert(slower_process.passed);
     bool saw_diagnostic_process = false;
