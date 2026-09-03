@@ -108,6 +108,15 @@ std::string timing_label(const TestReport& report) {
     return out.str();
 }
 
+std::string run_performance_label(const TestReport& report) {
+    if (!report.run_performance_checked) return "—";
+    if (report.run_performance_baseline_missing) return "missing baseline";
+    for (const auto& comparison : report.run_performance) {
+        if (comparison.regressed) return "regression";
+    }
+    return "clean (" + std::to_string(report.run_performance.size()) + " metrics)";
+}
+
 std::string validation_label(const TestReport& report) {
     if (!report.validation_checked) return "—";
     if (!report.validation_available) return "unavailable";
@@ -121,8 +130,8 @@ std::string build_markdown_report(const std::vector<TestReport>& reports, std::s
     std::ostringstream out;
     out << "# RendererCheck report\n\n"
         << "RendererCheck " << RENDERCHECK_VERSION << " — **" << passed << " passed, " << failed << " failed**\n\n"
-        << "| Test | Status | Process | Renderer | Timing | Validation | Visual |\n"
-        << "|---|---:|---:|---:|---:|---:|---:|\n";
+        << "| Test | Status | Process | Renderer | Timing | Run perf | Validation | Visual |\n"
+        << "|---|---:|---:|---:|---:|---:|---:|---:|\n";
     for (const auto& report : reports) {
         out << "| " << markdown_escape(report.name)
             << " | " << (report.passed ? "PASS" : "FAIL")
@@ -130,12 +139,37 @@ std::string build_markdown_report(const std::vector<TestReport>& reports, std::s
         if (report.timed_out) out << " timeout";
         out << " | " << report.renderer_mode
             << " | " << timing_label(report)
+            << " | " << run_performance_label(report)
             << " | " << validation_label(report);
         if (report.visual_checked) out << " | " << std::fixed << std::setprecision(3) << report.changed_percent << "% changed";
         else out << " | —";
         out << " |\n";
     }
     out << "\n";
+
+    for (const auto& report : reports) {
+        if (!report.run_performance_checked) continue;
+        out << "## " << markdown_escape(report.name) << " run performance\n\n"
+            << "| Metric | Samples | Current median | Baseline median | Median delta | Current p95 | Baseline p95 | P95 delta | Status |\n"
+            << "|---|---:|---:|---:|---:|---:|---:|---:|---:|\n";
+        for (const auto& comparison : report.run_performance) {
+            out << "| " << markdown_escape(comparison.name)
+                << " | " << comparison.samples
+                << " | " << std::fixed << std::setprecision(3) << comparison.current_median << " ms";
+            if (comparison.baseline_missing) {
+                out << " | — | — | " << comparison.current_p95 << " ms | — | — | MISSING |\n";
+                continue;
+            }
+            out << " | " << comparison.baseline_median << " ms"
+                << " | " << std::showpos << comparison.median_delta_percent << "%" << std::noshowpos
+                << " | " << comparison.current_p95 << " ms"
+                << " | " << comparison.baseline_p95 << " ms"
+                << " | " << std::showpos << comparison.p95_delta_percent << "%" << std::noshowpos
+                << " | " << (comparison.regressed ? "REGRESSION" : "PASS") << " |\n";
+        }
+        out << "\n";
+    }
+
     for (const auto& report : reports) {
         if (report.failures.empty()) continue;
         out << "## " << markdown_escape(report.name) << " failures\n\n";
@@ -361,7 +395,26 @@ void write_reports(const std::vector<TestReport>& reports, std::size_t passed, s
                         << ",\"p95\":" << r.metrics[m].p95
                         << ",\"maximum\":" << r.metrics[m].maximum << '}';
                 }
-                out << "],\n      \"failures\": [";
+                out << "],\n      \"run_performance\": {\"checked\": "
+                    << (r.run_performance_checked ? "true" : "false")
+                    << ", \"baseline_missing\": "
+                    << (r.run_performance_baseline_missing ? "true" : "false")
+                    << ", \"comparisons\": [";
+                for (std::size_t p = 0; p < r.run_performance.size(); ++p) {
+                    if (p) out << ',';
+                    const auto& comparison = r.run_performance[p];
+                    out << "{\"name\":"; write_json_string(out, comparison.name);
+                    out << ",\"samples\":" << comparison.samples
+                        << ",\"current_median\":" << comparison.current_median
+                        << ",\"current_p95\":" << comparison.current_p95
+                        << ",\"baseline_missing\":" << (comparison.baseline_missing ? "true" : "false")
+                        << ",\"baseline_median\":" << comparison.baseline_median
+                        << ",\"baseline_p95\":" << comparison.baseline_p95
+                        << ",\"median_delta_percent\":" << comparison.median_delta_percent
+                        << ",\"p95_delta_percent\":" << comparison.p95_delta_percent
+                        << ",\"regressed\":" << (comparison.regressed ? "true" : "false") << '}';
+                }
+                out << "]},\n      \"failures\": [";
                 for (std::size_t f = 0; f < r.failures.size(); ++f) {
                     if (f) out << ',';
                     write_json_string(out, r.failures[f]);
