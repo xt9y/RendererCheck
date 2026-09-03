@@ -4,14 +4,6 @@ on:
   push:
     tags:
       - 'v*'
-  pull_request:
-    paths:
-      - '.github/workflows/release.yml'
-      - 'Makefile'
-      - 'src/**'
-      - 'include/**'
-      - 'README.md'
-      - 'LICENSE'
   workflow_dispatch:
 
 permissions:
