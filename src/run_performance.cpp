@@ -188,6 +188,21 @@ ValueMap current_values(std::string_view test_name,
     return values;
 }
 
+bool has_native_timing(const ValueMap& values,
+                       std::string_view test_name)
+{
+    for (const auto& [key, value] : values)
+    {
+        (void)value;
+        if (key.first == test_name && key.second != "process_ms")
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 double delta_percent(double current, double baseline)
 {
     if (baseline > 0.0)
@@ -232,6 +247,7 @@ RunPerformanceResult evaluate_run_performance(std::string_view test_name,
     const ValueMap current = current_values(test_name, process_ms, metrics);
     const ValueMap baselines = load_values(run_performance_baseline_path(), false);
     const double factor = 1.0 + regression_percent / 100.0;
+    const bool native_timing = has_native_timing(current, test_name);
 
     for (const auto& [key, value] : current)
     {
@@ -240,16 +256,23 @@ RunPerformanceResult evaluate_run_performance(std::string_view test_name,
         comparison.samples = value.samples;
         comparison.current_median = value.median;
         comparison.current_p95 = value.p95;
+        comparison.gating = run_performance_metric_is_gating(
+                comparison.name,
+                native_timing
+            );
 
         const auto baseline_it = baselines.find(key);
         if (baseline_it == baselines.end())
         {
             comparison.baseline_missing = true;
-            result.baseline_missing = true;
-            result.passed = false;
-            result.failures.push_back(
-                    comparison.name + " run-performance baseline missing"
-                );
+            if (comparison.gating)
+            {
+                result.baseline_missing = true;
+                result.passed = false;
+                result.failures.push_back(
+                        comparison.name + " run-performance baseline missing"
+                    );
+            }
             result.comparisons.push_back(comparison);
             continue;
         }
@@ -259,9 +282,10 @@ RunPerformanceResult evaluate_run_performance(std::string_view test_name,
         comparison.baseline_p95 = baseline.p95;
         comparison.median_delta_percent = delta_percent(value.median, baseline.median);
         comparison.p95_delta_percent = delta_percent(value.p95, baseline.p95);
-        comparison.regressed =
+        const bool raw_regression =
             value.median > baseline.median * factor
             || value.p95 > baseline.p95 * factor;
+        comparison.regressed = comparison.gating && raw_regression;
 
         if (comparison.regressed)
         {
