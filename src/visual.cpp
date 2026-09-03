@@ -1,5 +1,6 @@
 #include "rendercheck/visual.h"
 #include "rendercheck/image.h"
+#include "rendercheck/run_performance.h"
 
 #include <cstdint>
 #include <filesystem>
@@ -199,16 +200,30 @@ int approve_captures(std::string_view filter) {
     std::cout << "RendererCheck approve\n\n";
     std::size_t approved = 0, failed = 0;
     for (const auto& selected_test : selected) {
+        std::cout << selected_test.name << '\n';
         const fs::path actual = capture_path(selected_test.name);
         const fs::path baseline = baseline_path(config, selected_test.name, selected_test.test);
         Image image;
         if (!load_ppm(actual, image, error) || !save_ppm(baseline, image, error)) {
-            std::cout << selected_test.name << "\n  [fail] " << error << "\n\n";
+            std::cout << "  [fail] visual: " << error << "\n\n";
             ++failed;
             continue;
         }
-        std::cout << selected_test.name << "\n  [ok] approved " << image.width << 'x' << image.height
-                  << " baseline\n  baseline: " << baseline.string() << "\n\n";
+
+        std::cout << "  [ok] approved " << image.width << 'x' << image.height
+                  << " visual baseline\n  baseline: " << baseline.string() << '\n';
+
+        std::size_t performance_metrics = 0;
+        error.clear();
+        if (!approve_run_performance(selected_test.name, performance_metrics, error)) {
+            std::cout << "  [fail] run performance: " << error << "\n\n";
+            ++failed;
+            continue;
+        }
+
+        std::cout << "  [ok] approved " << performance_metrics
+                  << " run-performance metrics\n  performance baseline: "
+                  << run_performance_baseline_path().string() << "\n\n";
         ++approved;
     }
     std::cout << "Summary: " << approved << " approved, " << failed << " failed\n";
