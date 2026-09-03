@@ -65,10 +65,16 @@ jobs:
         working-directory: examples/basic-c
         run: |
           make
-          renderercheck run gradient
+          if renderercheck run gradient; then
+            echo 'Expected the first run on a fresh machine to require a run-performance baseline'
+            exit 1
+          fi
           test -s .rendercheck/gradient/actual.png
           grep -q '"schema_version": 1' .rendercheck/results.json
           grep -q '"name":"draw_calls"' .rendercheck/results.json
+          grep -q 'run-performance baseline missing' .rendercheck/results.json
+          renderercheck approve gradient
+          renderercheck run gradient
           if RENDERCHECK_EXAMPLE_MUTATE=1 renderercheck run gradient; then
             echo 'RendererCheck unexpectedly accepted a changed committed baseline'
             exit 1
