@@ -167,6 +167,19 @@ bool parse_renderer(std::string_view value, RendererMode& mode) {
     return true;
 }
 
+bool parse_min_samples(const std::string& key,
+                       std::string_view value,
+                       std::uint32_t& out,
+                       std::string& error,
+                       const std::filesystem::path& path,
+                       std::size_t line_number) {
+    if (!parse_uint(value, out) || out == 0) {
+        error = path.string() + ':' + std::to_string(line_number) + ": expected positive integer for " + key;
+        return false;
+    }
+    return true;
+}
+
 } // namespace
 
 const char* headless_mode_name(HeadlessMode mode) {
@@ -192,9 +205,10 @@ bool load_config(const std::filesystem::path& path, Config& config, std::string&
     std::ifstream in(path);
     if (!in) { error = "could not open " + path.string(); return false; }
 
-    enum class Section { None, Project, Validation, Performance, Test };
+    enum class Section { None, Project, Validation, Performance, Test, Perf };
     Section section = Section::None;
     TestConfig* current_test = nullptr;
+    PerfCaseConfig* current_perf = nullptr;
     std::unordered_set<std::string> current_keys;
     bool seen_project = false;
     bool seen_validation = false;
@@ -210,6 +224,7 @@ bool load_config(const std::filesystem::path& path, Config& config, std::string&
         if (line.front() == '[') {
             current_keys.clear();
             current_test = nullptr;
+            current_perf = nullptr;
             if (line == "[project]") {
                 if (seen_project) { error = path.string() + ':' + std::to_string(line_number) + ": duplicate [project] section"; return false; }
                 seen_project = true; section = Section::Project; continue;
@@ -226,6 +241,12 @@ bool load_config(const std::filesystem::path& path, Config& config, std::string&
                 config.tests.emplace_back();
                 current_test = &config.tests.back();
                 section = Section::Test;
+                continue;
+            }
+            if (line == "[[perf]]") {
+                config.perf_cases.emplace_back();
+                current_perf = &config.perf_cases.back();
+                section = Section::Perf;
                 continue;
             }
             error = path.string() + ':' + std::to_string(line_number) + ": unknown section " + line;
@@ -301,6 +322,17 @@ bool load_config(const std::filesystem::path& path, Config& config, std::string&
                 if (!parse_nonnegative_double(key, value, config.performance.max_gpu_ms, error, path, line_number)) return false;
             } else if (key == "max_process_ms") {
                 if (!parse_nonnegative_double(key, value, config.performance.max_process_ms, error, path, line_number)) return false;
+            } else if (key == "warmup_ms") {
+                if (!parse_nonnegative_double(key, value, config.performance.warmup_ms, error, path, line_number)) return false;
+            } else if (key == "sample_ms") {
+                if (!parse_nonnegative_double(key, value, config.performance.sample_ms, error, path, line_number) || config.performance.sample_ms <= 0.0) {
+                    if (error.empty()) error = path.string() + ':' + std::to_string(line_number) + ": expected positive number for sample_ms";
+                    return false;
+                }
+            } else if (key == "regression_percent") {
+                if (!parse_nonnegative_double(key, value, config.performance.regression_percent, error, path, line_number)) return false;
+            } else if (key == "min_samples") {
+                if (!parse_min_samples(key, value, config.performance.min_samples, error, path, line_number)) return false;
             } else recognized = false;
         } else if (section == Section::Test && current_test) {
             if (key == "name") { if (!string_value(current_test->name)) return false; }
@@ -328,6 +360,35 @@ bool load_config(const std::filesystem::path& path, Config& config, std::string&
                 if (!parse_nonnegative_double(key, value, current_test->timeout_ms, error, path, line_number)) return false;
                 current_test->has_timeout_ms = true;
             } else recognized = false;
+        } else if (section == Section::Perf && current_perf) {
+            if (key == "name") { if (!string_value(current_perf->name)) return false; }
+            else if (key == "command") { if (!string_value(current_perf->command)) return false; }
+            else if (key == "args") { if (!string_value(current_perf->args)) return false; }
+            else if (key == "env") { if (!string_value(current_perf->env)) return false; }
+            else if (key == "cwd") { std::string v; if (!string_value(v)) return false; current_perf->cwd = v; }
+            else if (key == "enabled") {
+                if (!parse_bool(value, current_perf->enabled)) {
+                    error = path.string() + ':' + std::to_string(line_number) + ": expected true or false for enabled"; return false;
+                }
+            } else if (key == "warmup_ms") {
+                if (!parse_nonnegative_double(key, value, current_perf->warmup_ms, error, path, line_number)) return false;
+                current_perf->has_warmup_ms = true;
+            } else if (key == "sample_ms") {
+                if (!parse_nonnegative_double(key, value, current_perf->sample_ms, error, path, line_number) || current_perf->sample_ms <= 0.0) {
+                    if (error.empty()) error = path.string() + ':' + std::to_string(line_number) + ": expected positive number for sample_ms";
+                    return false;
+                }
+                current_perf->has_sample_ms = true;
+            } else if (key == "regression_percent") {
+                if (!parse_nonnegative_double(key, value, current_perf->regression_percent, error, path, line_number)) return false;
+                current_perf->has_regression_percent = true;
+            } else if (key == "min_samples") {
+                if (!parse_min_samples(key, value, current_perf->min_samples, error, path, line_number)) return false;
+                current_perf->has_min_samples = true;
+            } else if (key == "timeout_ms") {
+                if (!parse_nonnegative_double(key, value, current_perf->timeout_ms, error, path, line_number)) return false;
+                current_perf->has_timeout_ms = true;
+            } else recognized = false;
         }
 
         if (!recognized) {
@@ -347,6 +408,18 @@ bool load_config(const std::filesystem::path& path, Config& config, std::string&
         }
         if (!names.insert(config.tests[i].name).second) {
             error = path.string() + ": duplicate test name \"" + config.tests[i].name + "\"";
+            return false;
+        }
+    }
+
+    names.clear();
+    for (std::size_t i = 0; i < config.perf_cases.size(); ++i) {
+        if (config.perf_cases[i].name.empty()) {
+            error = path.string() + ": perf case " + std::to_string(i + 1) + " is missing name";
+            return false;
+        }
+        if (!names.insert(config.perf_cases[i].name).second) {
+            error = path.string() + ": duplicate perf case name \"" + config.perf_cases[i].name + "\"";
             return false;
         }
     }
