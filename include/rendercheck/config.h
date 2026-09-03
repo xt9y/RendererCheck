@@ -27,6 +27,10 @@ struct ValidationConfig {
 struct PerformanceConfig {
     double max_gpu_ms = 0.0;
     double max_process_ms = 0.0;
+    double warmup_ms = 1000.0;
+    double sample_ms = 3000.0;
+    double regression_percent = 15.0;
+    std::uint32_t min_samples = 3;
 };
 
 struct ProjectConfig {
@@ -62,11 +66,33 @@ struct TestConfig {
     bool has_timeout_ms = false;
 };
 
+struct PerfCaseConfig {
+    std::string name;
+    std::string command;
+    std::string args;
+    std::string env;
+    std::filesystem::path cwd;
+    bool enabled = true;
+
+    double warmup_ms = 0.0;
+    double sample_ms = 0.0;
+    double regression_percent = 0.0;
+    std::uint32_t min_samples = 0;
+    double timeout_ms = 0.0;
+
+    bool has_warmup_ms = false;
+    bool has_sample_ms = false;
+    bool has_regression_percent = false;
+    bool has_min_samples = false;
+    bool has_timeout_ms = false;
+};
+
 struct Config {
     ProjectConfig project;
     ValidationConfig validation;
     PerformanceConfig performance;
     std::vector<TestConfig> tests;
+    std::vector<PerfCaseConfig> perf_cases;
 };
 
 bool load_config(const std::filesystem::path& path, Config& config, std::string& error);
