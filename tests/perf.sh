@@ -20,9 +20,23 @@ set -eu
 [ -n "${RENDERCHECK_METRICS_PATH:-}" ]
 echo 'synthetic perf stdout'
 echo 'synthetic perf stderr' >&2
-printf 'direct_ms=1.000\ndirect_ms=1.100\ndirect_ms=0.900\n' >> "$RENDERCHECK_METRICS_PATH"
-printf 'lumen_trace_ms=0.400\nlumen_trace_ms=0.450\nlumen_trace_ms=0.420\n' >> "$RENDERCHECK_METRICS_PATH"
-printf 'gpu_pipeline_ms=1.500\ngpu_pipeline_ms=1.600\ngpu_pipeline_ms=1.550\n' >> "$RENDERCHECK_METRICS_PATH"
+case "${PERF_PROFILE:-base}" in
+  slow)
+    printf 'direct_ms=1.800\ndirect_ms=2.000\ndirect_ms=2.200\n' >> "$RENDERCHECK_METRICS_PATH"
+    printf 'lumen_trace_ms=0.700\nlumen_trace_ms=0.800\nlumen_trace_ms=0.900\n' >> "$RENDERCHECK_METRICS_PATH"
+    printf 'gpu_pipeline_ms=2.700\ngpu_pipeline_ms=2.800\ngpu_pipeline_ms=2.900\n' >> "$RENDERCHECK_METRICS_PATH"
+    ;;
+  fast)
+    printf 'direct_ms=0.700\ndirect_ms=0.800\ndirect_ms=0.900\n' >> "$RENDERCHECK_METRICS_PATH"
+    printf 'lumen_trace_ms=0.300\nlumen_trace_ms=0.320\nlumen_trace_ms=0.340\n' >> "$RENDERCHECK_METRICS_PATH"
+    printf 'gpu_pipeline_ms=1.100\ngpu_pipeline_ms=1.200\ngpu_pipeline_ms=1.300\n' >> "$RENDERCHECK_METRICS_PATH"
+    ;;
+  *)
+    printf 'direct_ms=1.000\ndirect_ms=1.100\ndirect_ms=0.900\n' >> "$RENDERCHECK_METRICS_PATH"
+    printf 'lumen_trace_ms=0.400\nlumen_trace_ms=0.450\nlumen_trace_ms=0.420\n' >> "$RENDERCHECK_METRICS_PATH"
+    printf 'gpu_pipeline_ms=1.500\ngpu_pipeline_ms=1.600\ngpu_pipeline_ms=1.550\n' >> "$RENDERCHECK_METRICS_PATH"
+    ;;
+esac
 SH
 chmod +x renderer
 
@@ -56,4 +70,17 @@ grep -q '"name": "direct_ms"' .rendercheck/performance/results.json
 grep -q '"median": 1.000' .rendercheck/performance/results.json
 grep -q '"p95": 1.100' .rendercheck/performance/results.json
 
-echo 'Performance CLI test passed'
+RENDERCHECK_HEADLESS_AUTO=0 "$BIN" perf --approve steady >/dev/null
+test -s .rendercheck/performance/baseline.tsv
+grep -q 'steady.*direct_ms' .rendercheck/performance/baseline.tsv
+
+if PERF_PROFILE=slow RENDERCHECK_HEADLESS_AUTO=0 "$BIN" perf steady >/dev/null 2>&1; then
+  echo 'expected slower performance run to fail against approved baseline' >&2
+  exit 1
+fi
+grep -q 'regression' .rendercheck/performance/report.md
+
+PERF_PROFILE=fast RENDERCHECK_HEADLESS_AUTO=0 "$BIN" perf steady >/dev/null
+grep -q '"baseline_median"' .rendercheck/performance/results.json
+
+echo 'Performance CLI and baseline tests passed'
