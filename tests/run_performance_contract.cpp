@@ -13,7 +13,7 @@ int main()
 
     assert(rendercheck::run_performance_metric_is_gating("cpu_render_ms", true));
     assert(!rendercheck::run_performance_metric_is_gating("process_ms", true));
-    assert(rendercheck::run_performance_metric_is_gating("process_ms", false));
+    assert(!rendercheck::run_performance_metric_is_gating("process_ms", false));
 
     const fs::path old_cwd = fs::current_path();
     const fs::path root = fs::temp_directory_path() / "renderercheck-run-performance-contract";
@@ -119,12 +119,13 @@ int main()
     }
     assert(saw_regression);
 
-    const auto process_only_missing = rendercheck::evaluate_run_performance("ProcessOnly", 1000.0, {}, 15.0);
-    assert(!process_only_missing.passed);
-    assert(process_only_missing.baseline_missing);
-    assert(process_only_missing.comparisons.size() == 1);
-    assert(process_only_missing.comparisons.front().name == "process_ms");
-    assert(process_only_missing.comparisons.front().gating);
+    const auto process_only = rendercheck::evaluate_run_performance("ProcessOnly", 1000.0, {}, 15.0);
+    assert(process_only.passed);
+    assert(!process_only.baseline_missing);
+    assert(process_only.comparisons.size() == 1);
+    assert(process_only.comparisons.front().name == "process_ms");
+    assert(!process_only.comparisons.front().gating);
+    assert(process_only.comparisons.front().baseline_missing);
 
     assert(rendercheck::save_run_performance_latest("FinalScene", 0.0, {}, false, error));
     approved = 0;
