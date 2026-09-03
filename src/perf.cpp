@@ -14,10 +14,12 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <map>
 #include <sstream>
 #include <string>
 #include <string_view>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #if defined(__APPLE__) || defined(__linux__)
@@ -64,6 +66,14 @@ struct PerfCaseResult {
     std::vector<MetricSummary> metrics;
     std::vector<std::string> failures;
 };
+
+struct BaselineValue {
+    double median = 0.0;
+    double p95 = 0.0;
+};
+
+using BaselineKey = std::pair<std::string, std::string>;
+using BaselineMap = std::map<BaselineKey, BaselineValue>;
 
 bool env_truthy(const char* name) {
     const char* value = std::getenv(name);
@@ -140,8 +150,47 @@ fs::path perf_root() {
     return fs::path(".rendercheck") / "performance";
 }
 
+fs::path baseline_path() {
+    return perf_root() / "baseline.tsv";
+}
+
 fs::path case_output_dir(std::string_view name) {
     return perf_root() / "runs" / safe_test_name(name);
+}
+
+BaselineMap load_baselines() {
+    BaselineMap baselines;
+    std::ifstream in(baseline_path());
+    std::string line;
+    while (std::getline(in, line)) {
+        if (line.empty() || line.front() == '#') continue;
+        std::istringstream row(line);
+        std::string case_name;
+        std::string metric_name;
+        BaselineValue value;
+        if (row >> std::quoted(case_name) >> std::quoted(metric_name) >> value.median >> value.p95) {
+            if (std::isfinite(value.median) && std::isfinite(value.p95) && value.median >= 0.0 && value.p95 >= 0.0) {
+                baselines[{case_name, metric_name}] = value;
+            }
+        }
+    }
+    return baselines;
+}
+
+bool write_baselines(const BaselineMap& baselines) {
+    std::error_code ec;
+    fs::create_directories(perf_root(), ec);
+    if (ec) return false;
+    std::ofstream out(baseline_path(), std::ios::trunc);
+    if (!out) return false;
+    out << "# RendererCheck performance baseline v1\n";
+    out << std::setprecision(17);
+    for (const auto& [key, value] : baselines) {
+        out << std::quoted(key.first) << '\t'
+            << std::quoted(key.second) << '\t'
+            << value.median << '\t' << value.p95 << '\n';
+    }
+    return static_cast<bool>(out);
 }
 
 #if defined(__APPLE__) || defined(__linux__)
@@ -314,7 +363,63 @@ bool metric_is_timing(const MetricSummary& metric) {
     return metric.name.size() >= 3u && metric.name.ends_with("_ms");
 }
 
-void write_perf_reports(const std::vector<PerfCaseResult>& results, bool approve) {
+const BaselineValue* find_baseline(const BaselineMap& baselines,
+                                   std::string_view case_name,
+                                   std::string_view metric_name) {
+    const auto it = baselines.find({std::string(case_name), std::string(metric_name)});
+    return it == baselines.end() ? nullptr : &it->second;
+}
+
+double delta_percent(double current, double baseline) {
+    if (baseline > 0.0) return (current / baseline - 1.0) * 100.0;
+    return current <= 0.0 ? 0.0 : 1000000.0;
+}
+
+bool metric_regressed(const MetricSummary& metric,
+                      const BaselineValue& baseline,
+                      double regression_percent) {
+    const double factor = 1.0 + regression_percent / 100.0;
+    return metric.median > baseline.median * factor || metric.p95 > baseline.p95 * factor;
+}
+
+void evaluate_baselines(PerfCaseResult& result, const BaselineMap& baselines) {
+    for (const auto& metric : result.metrics) {
+        if (!metric_is_timing(metric)) continue;
+        const BaselineValue* baseline = find_baseline(baselines, result.name, metric.name);
+        if (!baseline) continue;
+
+        if (metric.samples < result.min_samples) {
+            result.failures.push_back(
+                metric.name + " has " + std::to_string(metric.samples) +
+                " samples; baseline requires at least " + std::to_string(result.min_samples));
+            continue;
+        }
+
+        if (metric_regressed(metric, *baseline, result.regression_percent)) {
+            std::ostringstream failure;
+            failure << std::fixed << std::setprecision(3)
+                    << "performance regression: " << metric.name
+                    << " median " << metric.median << " ms vs " << baseline->median
+                    << " ms, p95 " << metric.p95 << " ms vs " << baseline->p95
+                    << " ms (allowed +" << result.regression_percent << "%)";
+            result.failures.push_back(failure.str());
+        }
+    }
+    result.passed = result.failures.empty();
+}
+
+void approve_results(const std::vector<PerfCaseResult>& results, BaselineMap& baselines) {
+    for (const auto& result : results) {
+        for (const auto& metric : result.metrics) {
+            if (!metric_is_timing(metric)) continue;
+            baselines[{result.name, metric.name}] = {metric.median, metric.p95};
+        }
+    }
+}
+
+void write_perf_reports(const std::vector<PerfCaseResult>& results,
+                        bool approve,
+                        const BaselineMap& baselines) {
     std::error_code ec;
     fs::create_directories(perf_root(), ec);
     if (ec) return;
@@ -329,18 +434,23 @@ void write_perf_reports(const std::vector<PerfCaseResult>& results, bool approve
             out << "# RendererCheck performance report\n\n"
                 << "RendererCheck " << RENDERCHECK_VERSION << " — **"
                 << passed << " passed, " << failed << " failed**\n\n";
-            if (approve) out << "> Approval requested; baseline persistence is handled by the baseline stage.\n\n";
+            if (approve) out << "> Current timing metrics approved as the local performance baseline.\n\n";
             for (const auto& result : results) {
                 out << "## " << result.name << " — " << (result.passed ? "PASS" : "FAIL") << "\n\n"
-                    << "| Metric | Samples | Min | Average | Median | p95 | Max |\n"
-                    << "|---|---:|---:|---:|---:|---:|---:|\n";
+                    << "| Metric | Samples | Min | Average | Median | p95 | Baseline median | Baseline p95 | Status |\n"
+                    << "|---|---:|---:|---:|---:|---:|---:|---:|---:|\n";
                 for (const auto& metric : result.metrics) {
+                    const BaselineValue* baseline = find_baseline(baselines, result.name, metric.name);
+                    const bool regressed = baseline && metric_is_timing(metric) &&
+                        metric_regressed(metric, *baseline, result.regression_percent);
                     out << "| " << metric.name << " | " << metric.samples
                         << " | " << std::fixed << std::setprecision(3) << metric.minimum
                         << " | " << metric.average
                         << " | " << metric.median
-                        << " | " << metric.p95
-                        << " | " << metric.maximum << " |\n";
+                        << " | " << metric.p95 << " | ";
+                    if (baseline) out << baseline->median << " | " << baseline->p95;
+                    else out << "— | —";
+                    out << " | " << (regressed ? "regression" : "ok") << " |\n";
                 }
                 if (!result.failures.empty()) {
                     out << "\nFailures:\n";
@@ -372,13 +482,25 @@ void write_perf_reports(const std::vector<PerfCaseResult>& results, bool approve
                     << ",\n      \"metrics\": [\n";
                 for (std::size_t m = 0; m < result.metrics.size(); ++m) {
                     const auto& metric = result.metrics[m];
+                    const BaselineValue* baseline = find_baseline(baselines, result.name, metric.name);
+                    const bool regressed = baseline && metric_is_timing(metric) &&
+                        metric_regressed(metric, *baseline, result.regression_percent);
                     out << "        {\"name\": "; json_string(out, metric.name);
                     out << ", \"samples\": " << metric.samples
                         << ", \"minimum\": " << metric.minimum
                         << ", \"average\": " << metric.average
                         << ", \"median\": " << metric.median
                         << ", \"p95\": " << metric.p95
-                        << ", \"maximum\": " << metric.maximum << '}';
+                        << ", \"maximum\": " << metric.maximum
+                        << ", \"baseline_median\": ";
+                    if (baseline) out << baseline->median; else out << "null";
+                    out << ", \"baseline_p95\": ";
+                    if (baseline) out << baseline->p95; else out << "null";
+                    out << ", \"median_delta_percent\": ";
+                    if (baseline) out << delta_percent(metric.median, baseline->median); else out << "null";
+                    out << ", \"p95_delta_percent\": ";
+                    if (baseline) out << delta_percent(metric.p95, baseline->p95); else out << "null";
+                    out << ", \"regression\": " << (regressed ? "true" : "false") << '}';
                     if (m + 1u != result.metrics.size()) out << ',';
                     out << '\n';
                 }
@@ -434,6 +556,7 @@ int run_perf(std::string_view filter, bool approve) {
         return 2;
     }
 
+    BaselineMap baselines = load_baselines();
     std::vector<PerfCaseResult> results;
     results.reserve(selected.size());
 
@@ -447,6 +570,7 @@ int run_perf(std::string_view filter, bool approve) {
 
         if (contains_software_override(configured->env)) {
             result.failures.push_back("performance case requests a software renderer");
+            result.passed = false;
             results.push_back(result);
             std::cout << perf_case.name << "\n  [fail] software-renderer override is not allowed\n\n";
             continue;
@@ -459,6 +583,7 @@ int run_perf(std::string_view filter, bool approve) {
         fs::create_directories(output_dir, ec);
         if (ec) {
             result.failures.push_back("could not create performance output directory");
+            result.passed = false;
             results.push_back(result);
             std::cout << perf_case.name << "\n  [fail] could not create output directory\n\n";
             continue;
@@ -494,11 +619,37 @@ int run_perf(std::string_view filter, bool approve) {
         if (!timing_metric_found) result.failures.push_back("renderer reported no *_ms performance metrics");
 
         result.passed = result.failures.empty();
-        std::cout << (result.passed ? "  [ok] performance samples\n\n" : "  [fail] performance case\n\n");
         results.push_back(std::move(result));
     }
 
-    write_perf_reports(results, approve);
+    bool approval_written = false;
+    if (approve) {
+        bool can_approve = true;
+        for (const auto& result : results) if (!result.passed) can_approve = false;
+        if (can_approve) {
+            approve_results(results, baselines);
+            approval_written = write_baselines(baselines);
+            if (!approval_written) {
+                for (auto& result : results) {
+                    result.failures.push_back("could not write local performance baseline");
+                    result.passed = false;
+                }
+            }
+        }
+    } else {
+        for (auto& result : results) evaluate_baselines(result, baselines);
+    }
+
+    for (const auto& result : results) {
+        if (result.passed) std::cout << "  [ok] " << result.name << '\n';
+        else {
+            std::cout << "  [fail] " << result.name << '\n';
+            for (const auto& failure : result.failures) std::cout << "    " << failure << '\n';
+        }
+    }
+    if (approve && approval_written) std::cout << "Approved: .rendercheck/performance/baseline.tsv\n";
+
+    write_perf_reports(results, approve && approval_written, baselines);
 
     std::size_t failed = 0;
     for (const auto& result : results) if (!result.passed) ++failed;
