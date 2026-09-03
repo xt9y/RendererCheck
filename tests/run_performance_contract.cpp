@@ -114,15 +114,34 @@ int main()
         );
     assert(scheduler_noise.passed);
 
-    /* A p95-only change beyond 0.50 ms still gates even if the median does not. */
-    MetricSummary regressed_cpu = cpu;
-    regressed_cpu.median = 0.200;
-    regressed_cpu.p95 = 0.600;
-    const std::vector<MetricSummary> regressed_metrics = {regressed_cpu};
-    const auto regressed = rendercheck::evaluate_run_performance("FinalScene", 1000.0, regressed_metrics, 15.0);
-    assert(!regressed.passed);
+    /* With fewer than 40 observations nearest-rank p95 is too sensitive to a
+     * single maximum/runner-up sample, so a p95-only spike is diagnostic. */
+    MetricSummary short_tail_cpu = cpu;
+    short_tail_cpu.samples = 24;
+    short_tail_cpu.median = 0.200;
+    short_tail_cpu.p95 = 0.600;
+    const std::vector<MetricSummary> short_tail_metrics = {short_tail_cpu};
+    const auto short_tail = rendercheck::evaluate_run_performance(
+            "FinalScene",
+            1000.0,
+            short_tail_metrics,
+            15.0
+        );
+    assert(short_tail.passed);
+
+    /* At 40 samples the same p95-only change is stable enough to gate. */
+    MetricSummary stable_tail_cpu = short_tail_cpu;
+    stable_tail_cpu.samples = rendercheck::RUN_PERFORMANCE_P95_MIN_SAMPLES;
+    const std::vector<MetricSummary> stable_tail_metrics = {stable_tail_cpu};
+    const auto stable_tail = rendercheck::evaluate_run_performance(
+            "FinalScene",
+            1000.0,
+            stable_tail_metrics,
+            15.0
+        );
+    assert(!stable_tail.passed);
     bool saw_regression = false;
-    for (const auto& comparison : regressed.comparisons)
+    for (const auto& comparison : stable_tail.comparisons)
     {
         if (comparison.name == "cpu_render_ms")
         {

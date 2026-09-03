@@ -283,19 +283,21 @@ RunPerformanceResult evaluate_run_performance(std::string_view test_name,
         comparison.baseline_p95 = baseline.p95;
         comparison.median_delta_percent = delta_percent(value.median, baseline.median);
         comparison.p95_delta_percent = delta_percent(value.p95, baseline.p95);
-        const bool raw_regression =
-            run_performance_exceeds_regression_floor(
-                    value.median,
-                    baseline.median,
-                    regression_percent
-                )
-            || run_performance_exceeds_regression_floor(
+
+        const bool median_regression = run_performance_exceeds_regression_floor(
+                value.median,
+                baseline.median,
+                regression_percent
+            );
+        const bool p95_regression = run_performance_p95_is_gating(value.samples)
+            && run_performance_exceeds_regression_floor(
                     value.p95,
                     baseline.p95,
                     regression_percent,
                     RUN_PERFORMANCE_P95_ABSOLUTE_FLOOR_MS
                 );
-        comparison.regressed = comparison.gating && raw_regression;
+        comparison.regressed = comparison.gating
+            && (median_regression || p95_regression);
 
         if (comparison.regressed)
         {

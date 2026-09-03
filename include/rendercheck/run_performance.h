@@ -40,11 +40,21 @@ inline bool run_performance_metric_is_gating(std::string_view name,
 
 inline constexpr double RUN_PERFORMANCE_ABSOLUTE_FLOOR_MS = 0.25;
 inline constexpr double RUN_PERFORMANCE_P95_ABSOLUTE_FLOOR_MS = 0.50;
+inline constexpr std::size_t RUN_PERFORMANCE_P95_MIN_SAMPLES = 40u;
+
+/* Nearest-rank p95 is too tail-sensitive on short captures: with 10 samples
+ * it is the single maximum, and with 24 samples it is only the second-highest
+ * observation. Keep reporting p95 for every run, but only use it as a gate
+ * once the capture contains enough observations for a meaningful tail. */
+inline bool run_performance_p95_is_gating(std::size_t samples)
+{
+    return samples >= RUN_PERFORMANCE_P95_MIN_SAMPLES;
+}
 
 /* Run-performance captures contain short sub-millisecond bookkeeping
  * metrics. A regression must exceed both the relative threshold and an
  * absolute timing floor. Median timing uses the stricter default floor;
- * p95 evaluation supplies the larger tail-noise floor explicitly. */
+ * sufficiently sampled p95 timing uses the larger tail-noise floor. */
 inline bool run_performance_exceeds_regression_floor(
         double current_ms,
         double baseline_ms,
