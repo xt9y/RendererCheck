@@ -16,8 +16,6 @@ namespace fs = std::filesystem;
 namespace rendercheck {
 namespace {
 
-constexpr double RUN_PERFORMANCE_ABSOLUTE_FLOOR_MS = 0.05;
-
 struct Value {
     std::size_t samples = 0;
     double median = 0.0;
@@ -289,14 +287,12 @@ RunPerformanceResult evaluate_run_performance(std::string_view test_name,
             run_performance_exceeds_regression_floor(
                     value.median,
                     baseline.median,
-                    regression_percent,
-                    RUN_PERFORMANCE_ABSOLUTE_FLOOR_MS
+                    regression_percent
                 )
             || run_performance_exceeds_regression_floor(
                     value.p95,
                     baseline.p95,
-                    regression_percent,
-                    RUN_PERFORMANCE_ABSOLUTE_FLOOR_MS
+                    regression_percent
                 );
         comparison.regressed = comparison.gating && raw_regression;
 

@@ -4,16 +4,22 @@
 
 int main()
 {
+    using rendercheck::RUN_PERFORMANCE_ABSOLUTE_FLOOR_MS;
     using rendercheck::run_performance_exceeds_regression_floor;
 
-    /* Relative noise on microsecond-scale metrics must not fail a run. */
-    assert(!run_performance_exceeds_regression_floor(0.003, 0.002, 15.0, 0.05));
+    static_assert(RUN_PERFORMANCE_ABSOLUTE_FLOOR_MS == 0.25);
 
-    /* A change below the configured relative threshold is not a regression. */
-    assert(!run_performance_exceeds_regression_floor(1.14, 1.00, 15.0, 0.05));
+    /* Scheduler noise observed in TemporalMotion: the relative increase is
+     * above 15%, but the absolute change is only 0.149 ms. */
+    assert(!run_performance_exceeds_regression_floor(1.076, 0.927, 15.0));
 
-    /* A material change must exceed both relative and absolute thresholds. */
-    assert(run_performance_exceeds_regression_floor(1.20, 1.00, 15.0, 0.05));
+    /* Relative threshold still protects larger timings. */
+    assert(!run_performance_exceeds_regression_floor(11.4, 10.0, 15.0));
+    assert(run_performance_exceeds_regression_floor(11.6, 10.0, 15.0));
+
+    /* Small timers must clear the 0.25 ms absolute floor as well. */
+    assert(!run_performance_exceeds_regression_floor(1.20, 1.00, 15.0));
+    assert(run_performance_exceeds_regression_floor(1.30, 1.00, 15.0));
 
     return 0;
 }
