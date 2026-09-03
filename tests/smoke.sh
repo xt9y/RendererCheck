@@ -22,6 +22,58 @@ tmp=$(mktemp -d)
 )
 rm -rf "$tmp"
 
+# Performance configuration must coexist with existing visual tests. This is
+# intentionally exercised through `run` first so parser support is proven
+# independently of the later `perf` CLI implementation.
+tmp=$(mktemp -d)
+(
+  cd "$tmp"
+  cat > rendercheck.toml <<'TOML'
+[project]
+name = "perf-config"
+command = "true"
+headless = "none"
+renderer = "hardware"
+
+[performance]
+warmup_ms = 250
+sample_ms = 750
+regression_percent = 12.5
+min_samples = 4
+
+[[perf]]
+name = "steady"
+command = "true"
+env = "DEMO_MODE=steady"
+warmup_ms = 100
+sample_ms = 500
+regression_percent = 8
+min_samples = 2
+timeout_ms = 2000
+TOML
+  RENDERCHECK_HEADLESS_AUTO=0 "$BIN" run >/dev/null
+)
+rm -rf "$tmp"
+
+# Duplicate performance case names are configuration errors.
+tmp=$(mktemp -d)
+(
+  cd "$tmp"
+  cat > rendercheck.toml <<'TOML'
+[project]
+name = "perf-config"
+command = "true"
+
+[[perf]]
+name = "same"
+
+[[perf]]
+name = "same"
+TOML
+  if "$BIN" run >/dev/null 2>&1; then exit 1; fi
+)
+rm -rf "$tmp"
+
 for kind in unknown-key unknown-section duplicate-name duplicate-key; do
   tmp=$(mktemp -d)
   case "$kind" in
