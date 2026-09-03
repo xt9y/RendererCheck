@@ -1,3 +1,4 @@
+#include "rendercheck/checks.h"
 #include "rendercheck/run_performance.h"
 
 #include <cassert>
