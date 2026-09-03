@@ -1,5 +1,6 @@
 #include "rendercheck/doctor.h"
 #include "rendercheck/perf.h"
+#include "rendercheck/perf_compare.h"
 #include "rendercheck/run.h"
 #include "rendercheck/version.h"
 #include "rendercheck/visual.h"
@@ -116,7 +117,9 @@ int main(int argc, char** argv) {
             std::cerr << "renderercheck: too many arguments for perf\n";
             return 2;
         }
-        return rendercheck::run_perf(filter, approve);
+        const int status = rendercheck::run_perf(filter, approve);
+        if (status <= 1 && filter.empty()) rendercheck::report_perf_comparisons();
+        return status;
     }
     if (argc > 3) { std::cerr << "renderercheck: too many arguments\n"; return 2; }
     const std::string_view filter = argc == 3 ? std::string_view(argv[2]) : std::string_view{};
