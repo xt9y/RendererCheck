@@ -1,6 +1,7 @@
 #pragma once
 
 #include "rendercheck/config.h"
+#include "rendercheck/run_performance.h"
 
 #include <cstddef>
 #include <filesystem>
@@ -58,6 +59,10 @@ struct TestReport {
     double gpu_average_ms = 0.0;
     double gpu_max_ms = 0.0;
     std::vector<MetricSummary> metrics;
+
+    bool run_performance_checked = false;
+    bool run_performance_baseline_missing = false;
+    std::vector<RunPerformanceComparison> run_performance;
 
     bool visual_checked = false;
     std::uint32_t capture_width = 0;
