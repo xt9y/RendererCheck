@@ -11,6 +11,10 @@ int main()
     namespace fs = std::filesystem;
     using rendercheck::MetricSummary;
 
+    assert(rendercheck::run_performance_metric_is_gating("cpu_render_ms", true));
+    assert(!rendercheck::run_performance_metric_is_gating("process_ms", true));
+    assert(rendercheck::run_performance_metric_is_gating("process_ms", false));
+
     const fs::path old_cwd = fs::current_path();
     const fs::path root = fs::temp_directory_path() / "renderercheck-run-performance-contract";
     std::error_code ec;
@@ -19,7 +23,7 @@ int main()
     fs::current_path(root);
 
     MetricSummary cpu;
-    cpu.name = "cpu_frame_ms";
+    cpu.name = "cpu_render_ms";
     cpu.samples = 100;
     cpu.median = 0.020;
     cpu.p95 = 0.030;
@@ -38,8 +42,25 @@ int main()
     assert(!missing.passed);
     assert(missing.baseline_missing);
     assert(missing.comparisons.size() == 2);
-    assert(missing.comparisons[0].name == "cpu_frame_ms" || missing.comparisons[1].name == "cpu_frame_ms");
-    assert(missing.comparisons[0].name == "process_ms" || missing.comparisons[1].name == "process_ms");
+
+    bool saw_cpu = false;
+    bool saw_process = false;
+    for (const auto& comparison : missing.comparisons)
+    {
+        if (comparison.name == "cpu_render_ms")
+        {
+            saw_cpu = true;
+            assert(comparison.gating);
+            assert(comparison.baseline_missing);
+        }
+        else if (comparison.name == "process_ms")
+        {
+            saw_process = true;
+            assert(!comparison.gating);
+            assert(comparison.baseline_missing);
+        }
+    }
+    assert(saw_cpu && saw_process);
 
     std::size_t approved = 0;
     assert(rendercheck::approve_run_performance("FinalScene", approved, error));
@@ -50,6 +71,20 @@ int main()
     assert(same.passed);
     assert(!same.baseline_missing);
 
+    const auto slower_process = rendercheck::evaluate_run_performance("FinalScene", 1400.0, metrics, 15.0);
+    assert(slower_process.passed);
+    bool saw_diagnostic_process_regression = false;
+    for (const auto& comparison : slower_process.comparisons)
+    {
+        if (comparison.name == "process_ms")
+        {
+            assert(!comparison.gating);
+            assert(comparison.regressed);
+            saw_diagnostic_process_regression = true;
+        }
+    }
+    assert(saw_diagnostic_process_regression);
+
     MetricSummary regressed_cpu = cpu;
     regressed_cpu.median = 0.025;
     regressed_cpu.p95 = 0.040;
@@ -59,14 +94,22 @@ int main()
     bool saw_regression = false;
     for (const auto& comparison : regressed.comparisons)
     {
-        if (comparison.name == "cpu_frame_ms")
+        if (comparison.name == "cpu_render_ms")
         {
             saw_regression = comparison.regressed;
+            assert(comparison.gating);
             assert(comparison.median_delta_percent > 15.0);
             assert(comparison.p95_delta_percent > 15.0);
         }
     }
     assert(saw_regression);
+
+    const auto process_only_missing = rendercheck::evaluate_run_performance("ProcessOnly", 1000.0, {}, 15.0);
+    assert(!process_only_missing.passed);
+    assert(process_only_missing.baseline_missing);
+    assert(process_only_missing.comparisons.size() == 1);
+    assert(process_only_missing.comparisons.front().name == "process_ms");
+    assert(process_only_missing.comparisons.front().gating);
 
     assert(rendercheck::save_run_performance_latest("FinalScene", 0.0, {}, false, error));
     approved = 0;
