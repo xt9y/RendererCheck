@@ -247,7 +247,9 @@ RunPerformanceResult evaluate_run_performance(std::string_view test_name,
     const ValueMap current = current_values(test_name, process_ms, metrics);
     const ValueMap baselines = load_values(run_performance_baseline_path(), false);
     const double factor = 1.0 + regression_percent / 100.0;
-    const bool native_timing = has_native_timing(current, test_name);
+    const bool current_native_timing = has_native_timing(current, test_name);
+    const bool baseline_native_timing = has_native_timing(baselines, test_name);
+    const bool native_timing_expected = current_native_timing || baseline_native_timing;
 
     for (const auto& [key, value] : current)
     {
@@ -258,7 +260,7 @@ RunPerformanceResult evaluate_run_performance(std::string_view test_name,
         comparison.current_p95 = value.p95;
         comparison.gating = run_performance_metric_is_gating(
                 comparison.name,
-                native_timing
+                native_timing_expected
             );
 
         const auto baseline_it = baselines.find(key);
@@ -296,6 +298,26 @@ RunPerformanceResult evaluate_run_performance(std::string_view test_name,
         }
 
         result.comparisons.push_back(comparison);
+    }
+
+    if (baseline_native_timing)
+    {
+        for (const auto& [key, value] : baselines)
+        {
+            (void)value;
+            if (key.first != test_name || key.second == "process_ms")
+            {
+                continue;
+            }
+
+            if (current.find(key) == current.end())
+            {
+                result.passed = false;
+                result.failures.push_back(
+                        key.second + " run-performance metric missing"
+                    );
+            }
+        }
     }
 
     return result;
