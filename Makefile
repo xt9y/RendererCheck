@@ -195,6 +195,8 @@ tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT HUP INT TERM; cd "$$tmp"; cat >ren
 #!/bin/sh
 set -eu
 [ "$${RENDERCHECK:-}" = 1 ]; [ "$${RENDERCHECK_PERF:-}" = 1 ]; [ -n "$${RENDERCHECK_PERF_CASE:-}" ]; [ -n "$${RENDERCHECK_PERF_WARMUP_MS:-}" ]; [ -n "$${RENDERCHECK_PERF_DURATION_MS:-}" ]; [ -n "$${RENDERCHECK_METRICS_PATH:-}" ]
+echo 'synthetic perf stdout'
+echo 'synthetic perf stderr' >&2
 case "$$RENDERCHECK_PERF_CASE" in BVH4-linear) d=.100;l=.050;; BVH4-bvh) d=.140;l=.060;; BVH16-linear) d=.220;l=.090;; BVH16-bvh) d=.160;l=.070;; BVH64-linear) d=.700;l=.240;; BVH64-bvh) d=.280;l=.190;; *) case "$${PERF_PROFILE:-base}" in slow) d=2.000;l=.800;g=2.800;; fast) d=.800;l=.320;g=1.200;; *) d=1.000;l=.420;g=1.550;; esac;; esac
 printf 'direct_ms=%s\ndirect_ms=%s\ndirect_ms=%s\n' "$$d" "$$d" "$$d" >>"$$RENDERCHECK_METRICS_PATH"; printf 'lumen_trace_ms=%s\nlumen_trace_ms=%s\nlumen_trace_ms=%s\n' "$$l" "$$l" "$$l" >>"$$RENDERCHECK_METRICS_PATH"; [ -z "$${g:-}" ] || printf 'gpu_pipeline_ms=%s\ngpu_pipeline_ms=%s\ngpu_pipeline_ms=%s\n' "$$g" "$$g" "$$g" >>"$$RENDERCHECK_METRICS_PATH"
 SH
