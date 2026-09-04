@@ -1,4 +1,4 @@
-name: Build and integration
+name: CI
 
 on:
   push:
@@ -8,6 +8,10 @@ on:
 
 permissions:
   contents: read
+
+concurrency:
+  group: renderercheck-ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -160,8 +164,8 @@ jobs:
             exit 1
           fi
           grep -q 'VUID-' .rendercheck/clean/validation.log
-      - name: Upload RendererCheck artifacts
-        if: always()
+      - name: Upload RendererCheck artifacts on failure
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: renderercheck-linux-graphics
@@ -197,8 +201,8 @@ jobs:
           test -s .rendercheck/metal-frame/actual.png
           renderercheck approve metal-frame
           renderercheck run metal-frame
-      - name: Upload Metal artifacts
-        if: always()
+      - name: Upload Metal artifacts on failure
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: renderercheck-metal
